@@ -13,7 +13,8 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 - **M0 — done.** See "Milestones" below for what it covered.
 - **M1 — done.**
 - **M2 — done.**
-- M3–M10 — not started.
+- **M3 — done.**
+- M4–M10 — not started.
 
 ## Note on scope
 
@@ -37,7 +38,7 @@ Minify/
       models/        # domain.py: Book, Chunk, ReaderProfile, ChatMessage, Status (Pydantic)
       storage/       # interface.py (Repository protocol) + orm.py (SQLAlchemy, private) + sqlite_adapter.py
       ingestion/     # interface.py (Ingestor, HeadingDetector protocols) + pymupdf_adapter.py + heading_detection.py
-      chunker/       # structure-aware split + semantic/overlap fallback
+      chunker/       # interface.py (Chunker, FallbackSplitter protocols) + structural_chunker.py + langchain_splitter.py
       llm/           # LangChain model factory, config-driven
       profile/       # reader profile module
       summarizer/     # chunk+profile+prior short summary -> content + short summary
@@ -81,9 +82,12 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - New dep: `uv add pymupdf` (import name `fitz`).
 - **Verify:** `backend/tests/test_ingestion.py` — synthetic PDFs built on the fly with PyMuPDF's own write API (no committed binary fixtures, per this session's decision). Covers: multi-chapter PDF → headings detected in order with correct offsets; a tie-prone case (equal heading/body line counts) as a regression test for the char-weighting fix; a plain PDF with uniform font → `headings == []` (the Chunker's fallback signal). All passing.
 
-### M3 — Chunker module
-- Structure-aware split when ingestion detected chapters; semantic/sliding-window fallback with overlap otherwise. Pure text-in/chunk-list-out.
-- **Verify:** unit tests on both ingestion outputs from M2 — assert chunk boundaries respect chapters when present, and that fallback chunks overlap by the configured amount.
+### M3 — Chunker module ✅
+- `chunker/interface.py`: `RawChunk` (intermediate shape — heading + text, not persisted), plus two protocols: `Chunker` (`chunk(document) -> list[RawChunk]`) and `FallbackSplitter` (`split(text) -> list[RawChunk]`).
+- Same stable-mechanism/swappable-policy split as M2: `structural_chunker.py`'s `StructuralChunker` owns deciding whether the document has usable structure and, if so, slicing at heading offsets (including a leading front-matter chunk for any text before the first heading, so nothing is silently dropped). Delegates to an injected `FallbackSplitter` entirely when `headings` is empty.
+- `langchain_splitter.py`'s `LangChainFallbackSplitter` wraps LangChain's `RecursiveCharacterTextSplitter` — decided this session to use LangChain rather than hand-rolled windowing, still behind the same protocol. Sized in **words**, not LangChain's default characters/tokens, via a custom `length_function=len(text.split())`: 5000 words per chunk, 200 words of overlap (revised up this session from an earlier 800/100 draft). Overlap only applies to this fallback path — structure-aware chunks rely on the Sequencer (M5) for coherence instead.
+- New dep: `uv add langchain-text-splitters`.
+- **Verify:** `backend/tests/test_chunker.py` — hand-built `IngestedDocument`s (not run through the real PyMuPDF ingestor, so Chunker's tests are independent of Ingestion's correctness). Covers: structure-aware split with front matter preserved as its own chunk; no-front-matter case; fallback case asserting consecutive chunks overlap by exactly the configured word count with nothing skipped between them; `LangChainFallbackSplitter` tested directly in isolation. All passing (10/10 across M1-M3).
 
 ### M4 — LLM layer + Reader Profile module
 - `llm/`: single LangChain chat-model factory built from config (provider/model/key), everything else calls this, never a provider SDK directly. Default provider: OpenAI, `gpt-4.1-mini`.
