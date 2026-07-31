@@ -25,6 +25,7 @@ def test_storage_round_trip(repo):
     )
     repo.save_reader_profile(profile)
     assert repo.get_reader_profile(profile.id) == profile
+    assert repo.get_default_reader_profile() == profile
 
     book = Book(
         id=str(uuid.uuid4()),
@@ -95,5 +96,6 @@ def test_get_missing_returns_none(repo):
     assert repo.get_book("does-not-exist") is None
     assert repo.get_chunk("does-not-exist") is None
     assert repo.get_reader_profile("does-not-exist") is None
+    assert repo.get_default_reader_profile() is None
     assert repo.get_chunks("does-not-exist") == []
     assert repo.get_chat_history("does-not-exist") == []

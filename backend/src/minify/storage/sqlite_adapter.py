@@ -86,6 +86,12 @@ class SqliteRepository:
             row = session.get(ReaderProfileRow, profile_id)
             return _profile_to_domain(row) if row else None
 
+    def get_default_reader_profile(self) -> ReaderProfile | None:
+        with Session(self._engine) as session:
+            stmt = select(ReaderProfileRow).where(ReaderProfileRow.is_default.is_(True))
+            row = session.scalars(stmt).first()
+            return _profile_to_domain(row) if row else None
+
     def save_book(self, book: Book) -> None:
         with Session(self._engine) as session:
             session.merge(BookRow(**book.model_dump()))

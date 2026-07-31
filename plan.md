@@ -14,7 +14,8 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 - **M1 — done.**
 - **M2 — done.**
 - **M3 — done.**
-- M4–M10 — not started.
+- **M4 — done.**
+- M5–M10 — not started.
 
 ## Note on scope
 
@@ -39,8 +40,8 @@ Minify/
       storage/       # interface.py (Repository protocol) + orm.py (SQLAlchemy, private) + sqlite_adapter.py
       ingestion/     # interface.py (Ingestor, HeadingDetector protocols) + pymupdf_adapter.py + heading_detection.py
       chunker/       # interface.py (Chunker, FallbackSplitter protocols) + structural_chunker.py + langchain_splitter.py
-      llm/           # LangChain model factory, config-driven
-      profile/       # reader profile module
+      llm/           # interface.py (ChatModelFactory protocol) + langchain_factory.py (provider dispatch from Settings)
+      profile/       # interface.py (ProfileService protocol) + service.py (DefaultProfileService, backed by Repository)
       summarizer/     # chunk+profile+prior short summary -> content + short summary
       sequencing/     # ordered pass carrying prior short summary forward
       chat/          # per-chunk grounded Q&A
@@ -71,7 +72,7 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 
 ### M1 — Shared data models + Storage module ✅
 - `models/domain.py`: `Book`, `Chunk` (with `content`/`short_summary` as nullable columns, not a separate table), `ReaderProfile`, `ChatMessage`, plus a shared `Status` literal. All PKs are app-generated UUID strings. All `created_at` fields default to naive IST (India Standard Time, UTC+5:30) via a shared `_now_ist()` factory — naive because SQLite drops tzinfo on round-trip, so the app standardizes on naive IST rather than fighting that limitation.
-- `storage/interface.py`: `Repository` protocol — `save_book`, `get_book`, `update_book_status`, `save_chunks`, `get_chunks`, `get_chunk`, `update_chunk_status`, `save_chunk_output(chunk_id, content, short_summary)`, `save_reader_profile`, `get_reader_profile`, `save_chat_message`, `get_chat_history`.
+- `storage/interface.py`: `Repository` protocol — `save_book`, `get_book`, `update_book_status`, `save_chunks`, `get_chunks`, `get_chunk`, `update_chunk_status`, `save_chunk_output(chunk_id, content, short_summary)`, `save_reader_profile`, `get_reader_profile`, `get_default_reader_profile` (added in M4, for the Reader Profile module), `save_chat_message`, `get_chat_history`.
 - `storage/orm.py` (SQLAlchemy tables, private to storage) + `storage/sqlite_adapter.py` (`SqliteRepository`) + Alembic wired at `backend/alembic/` (env.py reads `Settings.database_url`, targets `orm.Base.metadata`), initial migration applied to `minify.db`.
 - **Verify:** `backend/tests/test_storage.py` — round-trip through every repository method against a temp SQLite file, plus a not-found-returns-None/empty-list test. Passing.
 
@@ -89,10 +90,12 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - New dep: `uv add langchain-text-splitters`.
 - **Verify:** `backend/tests/test_chunker.py` — hand-built `IngestedDocument`s (not run through the real PyMuPDF ingestor, so Chunker's tests are independent of Ingestion's correctness). Covers: structure-aware split with front matter preserved as its own chunk; no-front-matter case; fallback case asserting consecutive chunks overlap by exactly the configured word count with nothing skipped between them; `LangChainFallbackSplitter` tested directly in isolation. All passing (10/10 across M1-M3).
 
-### M4 — LLM layer + Reader Profile module
-- `llm/`: single LangChain chat-model factory built from config (provider/model/key), everything else calls this, never a provider SDK directly. Default provider: OpenAI, `gpt-4.1-mini`.
-- `profile/`: reader profile model + sensible default, simple CRUD via storage interface.
-- **Verify:** a small script constructs the model from `.env` and does one live round-trip call (confirms the provider-agnostic wiring works before summarizer/chat depend on it).
+### M4 — LLM layer + Reader Profile module ✅
+- `llm/interface.py`: `ChatModelFactory` protocol — `get_chat_model() -> BaseChatModel`. Unlike other ports, this one exposes a LangChain type on purpose: LangChain is the design's permanent provider-agnostic abstraction, not something meant to be swapped out — what stays hidden outside `llm/` is the provider SDK and config underneath it.
+- `llm/langchain_factory.py`'s `LangChainChatModelFactory` dispatches on `Settings.llm_provider` (only `"openai"` → `ChatOpenAI` wired so far; unsupported provider raises a clear `ValueError`), lazily constructs and caches the model instance. New dep: `uv add langchain-openai`.
+- `profile/interface.py`: `ProfileService` protocol — `get_default()`, `create(background, intent, label=None)`, `get(profile_id)`. `profile/service.py`'s `DefaultProfileService` implements it against `Repository`; `get_default()` provisions and persists a sensible default profile (`label="General reader"`, generic background/intent copy — all easily editable) on first call, reusing it thereafter. Required one small additive method on `Repository`/`SqliteRepository`: `get_default_reader_profile()` (queries `is_default == True`) — this is exactly the piece M1 deliberately deferred to M4.
+- **Decided this session:** automated tests don't make live API calls (shouldn't need real secrets/network to pass) — `tests/test_llm.py` verifies the factory builds the right LangChain class/model name from `Settings` and rejects unsupported providers, which works without a valid key since LangChain doesn't authenticate until `.invoke()` is called. `backend/scripts/verify_llm.py` is a standalone script (not run by pytest) for a real round-trip call once you add `LLM_API_KEY` to your own `.env`.
+- **Verify:** `backend/tests/test_llm.py` + `backend/tests/test_profile.py`, 16/16 passing across M1-M4. `scripts/verify_llm.py` confirmed to fail with a friendly message when no key is set (correct behavior); live call left for you to run once a real key is in place.
 
 ### M5 — Summarizer + Sequencing step
 - `summarizer/`: chunk + profile + optional prior short summary → learner-facing content + short summary, both shaped by reader profile (content detailed/example-driven per profile; short summary reflects what this reader cares about but stays lean). Prompt templates live here only.
