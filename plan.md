@@ -12,7 +12,8 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 
 - **M0 — done.** See "Milestones" below for what it covered.
 - **M1 — done.**
-- M2–M10 — not started.
+- **M2 — done.**
+- M3–M10 — not started.
 
 ## Note on scope
 
@@ -35,7 +36,7 @@ Minify/
     src/minify/
       models/        # domain.py: Book, Chunk, ReaderProfile, ChatMessage, Status (Pydantic)
       storage/       # interface.py (Repository protocol) + orm.py (SQLAlchemy, private) + sqlite_adapter.py
-      ingestion/     # PDF -> raw text + structure (PyMuPDF)
+      ingestion/     # interface.py (Ingestor, HeadingDetector protocols) + pymupdf_adapter.py + heading_detection.py
       chunker/       # structure-aware split + semantic/overlap fallback
       llm/           # LangChain model factory, config-driven
       profile/       # reader profile module
@@ -73,9 +74,12 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - `storage/orm.py` (SQLAlchemy tables, private to storage) + `storage/sqlite_adapter.py` (`SqliteRepository`) + Alembic wired at `backend/alembic/` (env.py reads `Settings.database_url`, targets `orm.Base.metadata`), initial migration applied to `minify.db`.
 - **Verify:** `backend/tests/test_storage.py` — round-trip through every repository method against a temp SQLite file, plus a not-found-returns-None/empty-list test. Passing.
 
-### M2 — Ingestion module
-- PyMuPDF-based: PDF in → raw text + detected heading/chapter structure out. Pure function, no DB/API dependency.
-- **Verify:** unit test against 1-2 synthetic sample PDFs (one with clear chapter headings, one without) checked into `tests/fixtures/`.
+### M2 — Ingestion module ✅
+- `ingestion/interface.py`: `Heading`, `IngestedDocument`, `LineSpan` (intermediate shapes, not persisted — only ever exchanged between Ingestion and Chunker), plus two protocols: `Ingestor` (`ingest(pdf_bytes) -> IngestedDocument`) and `HeadingDetector` (`detect(lines) -> list[Heading]`).
+- Split into two independently swappable pieces, per this session's discussion: `pymupdf_adapter.py`'s `PyMuPdfIngestor` owns walking the PDF (pages/blocks/lines/spans via PyMuPDF) and building offset-annotated `LineSpan`s; `heading_detection.py`'s `FontSizeHeadingDetector` (the default, injected via constructor) owns the policy of which lines qualify as headings. Swapping detection strategy later (e.g. table-of-contents-based) never touches the PDF-walking code.
+- `FontSizeHeadingDetector` computes body-text size as the font size with the most total **characters** rendered at it (not most lines) — a line-count-based mode ties when a chapter has as few body lines as headings, which a character-count weighting avoids. Flags a line as a heading when its size clears `body_size * 1.15` and it's ≤12 words.
+- New dep: `uv add pymupdf` (import name `fitz`).
+- **Verify:** `backend/tests/test_ingestion.py` — synthetic PDFs built on the fly with PyMuPDF's own write API (no committed binary fixtures, per this session's decision). Covers: multi-chapter PDF → headings detected in order with correct offsets; a tie-prone case (equal heading/body line counts) as a regression test for the char-weighting fix; a plain PDF with uniform font → `headings == []` (the Chunker's fallback signal). All passing.
 
 ### M3 — Chunker module
 - Structure-aware split when ingestion detected chapters; semantic/sliding-window fallback with overlap otherwise. Pure text-in/chunk-list-out.
