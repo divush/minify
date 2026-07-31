@@ -1,0 +1,42 @@
+"""The storage port: the only contract the rest of the app is allowed to
+depend on for persistence.
+
+Every other backend module (ingestion, chunker, summarizer, chat, jobs, the
+API layer) talks to storage exclusively through the `Repository` protocol
+below. None of them import SQLAlchemy, `storage/orm.py`, or
+`storage/sqlite_adapter.py` directly. This is what makes the concrete
+database swappable later without touching any caller.
+"""
+
+from typing import Protocol
+
+from minify.models import Book, ChatMessage, Chunk, ReaderProfile, Status
+
+
+class Repository(Protocol):
+    """Abstract contract for persisting and retrieving domain models.
+
+    This is deliberately just a shape — a `Protocol`, not a base class with
+    behavior — and knows nothing about SQL, SQLAlchemy, or any specific
+    database. The concrete implementation (currently `SqliteRepository` in
+    `sqlite_adapter.py`, built on the SQLAlchemy tables in `orm.py`) is the
+    only place any of that lives. Swapping databases means writing a new
+    class that satisfies this protocol, not changing this file or any of its
+    callers.
+    """
+
+    def save_reader_profile(self, profile: ReaderProfile) -> None: ...
+    def get_reader_profile(self, profile_id: str) -> ReaderProfile | None: ...
+
+    def save_book(self, book: Book) -> None: ...
+    def get_book(self, book_id: str) -> Book | None: ...
+    def update_book_status(self, book_id: str, status: Status) -> None: ...
+
+    def save_chunks(self, chunks: list[Chunk]) -> None: ...
+    def get_chunks(self, book_id: str) -> list[Chunk]: ...
+    def get_chunk(self, chunk_id: str) -> Chunk | None: ...
+    def update_chunk_status(self, chunk_id: str, status: Status) -> None: ...
+    def save_chunk_output(self, chunk_id: str, content: str, short_summary: str) -> None: ...
+
+    def save_chat_message(self, message: ChatMessage) -> None: ...
+    def get_chat_history(self, chunk_id: str) -> list[ChatMessage]: ...

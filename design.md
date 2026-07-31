@@ -118,7 +118,7 @@ Uploading a book is long-running (ingestion + chunking + a sequential LLM pass o
 ## 7. Module Breakdown
 
 1. **Shared data models** — `Book`, `Chunk`, `ReaderProfile`, `Summary`, `ChatMessage`. The contracts every module agrees on. `Book` and `Chunk` each carry a processing `status` (e.g. `queued` / `processing` / `ready` / `failed`) so progress can be reported per chunk, not just per book.
-2. **Storage module** — SQLAlchemy models + Alembic migrations behind a repository-style interface (`save_book`, `get_chunks`, `save_content`, `save_short_summary`, `get_chat_history`, `update_status`, etc.).
+2. **Storage module** — SQLAlchemy models + Alembic migrations behind a repository-style interface (`save_book`, `get_chunks`, `save_chunk_output`, `get_chat_history`, `update_book_status`, `update_chunk_status`, etc.). `content` and `short_summary` live as columns directly on `Chunk` (set together in one call), not a separate table.
 3. **Ingestion module** — PDF in, raw text + detected chapter/heading structure out.
 4. **Chunker module** — structure-aware split when chapters are detected; semantic/sliding-window split with overlap as fallback. Pure text-in, chunk-list-out.
 5. **LLM layer (LangChain)** — single place constructing the chat model from config; every other module calls this, never a provider SDK directly.

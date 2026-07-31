@@ -11,7 +11,12 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 ## Status
 
 - **M0 — done.** See "Milestones" below for what it covered.
-- M1–M10 — not started.
+- **M1 — done.**
+- M2–M10 — not started.
+
+## Note on scope
+
+Ports-and-adapters applies to every backend module, not just Storage/LLM: `ingestion/`, `chunker/`, `summarizer/`, `sequencing/`, `chat/`, `jobs/`, and `profile/` each get their own `interface.py` (Protocol) + adapter, same as storage — so any one is swappable/reusable independently later.
 
 ## Terminology
 
@@ -25,9 +30,11 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 Minify/
   backend/          # FastAPI app, uv-managed
     pyproject.toml
+    alembic.ini
+    alembic/         # migrations env + versions/, targets storage/orm.py's Base.metadata
     src/minify/
-      models/        # shared data models (Book, Chunk, ReaderProfile, Summary, ChatMessage)
-      storage/       # repository interface + SQLAlchemy/SQLite adapter + Alembic migrations
+      models/        # domain.py: Book, Chunk, ReaderProfile, ChatMessage, Status (Pydantic)
+      storage/       # interface.py (Repository protocol) + orm.py (SQLAlchemy, private) + sqlite_adapter.py
       ingestion/     # PDF -> raw text + structure (PyMuPDF)
       chunker/       # structure-aware split + semantic/overlap fallback
       llm/           # LangChain model factory, config-driven
@@ -60,11 +67,11 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - **Why first:** de-risks the local run loop (`uvicorn` + `npm run dev` + `.env`) before any real logic exists, so every later milestone is additive, not entangled with tooling debugging.
 - **Verify:** `uvicorn` serves `/health`; `npm run dev` page shows a successful call to it. Done — confirmed live with both servers running.
 
-### M1 — Shared data models + Storage module
-- `models/`: `Book`, `Chunk`, `ReaderProfile`, `ChatMessage`, and a model holding each chunk's `content` + `short_summary` (name/shape TBD at implementation time — nothing about the ORM is fixed yet) (Pydantic + SQLAlchemy ORM pairing, per design §7.1).
-- `storage/interface.py`: repository protocol (`save_book`, `get_chunks`, `save_content`, `save_short_summary`, `get_chat_history`, etc. per design §7.2).
-- `storage/sqlite_adapter.py` + Alembic migrations, SQLite file adapter.
-- **Verify:** pytest suite exercising the repository interface against a throwaway SQLite DB (create book → add chunks → save content + short summary → fetch chat history round-trip).
+### M1 — Shared data models + Storage module ✅
+- `models/domain.py`: `Book`, `Chunk` (with `content`/`short_summary` as nullable columns, not a separate table), `ReaderProfile`, `ChatMessage`, plus a shared `Status` literal. All PKs are app-generated UUID strings. All `created_at` fields default to naive IST (India Standard Time, UTC+5:30) via a shared `_now_ist()` factory — naive because SQLite drops tzinfo on round-trip, so the app standardizes on naive IST rather than fighting that limitation.
+- `storage/interface.py`: `Repository` protocol — `save_book`, `get_book`, `update_book_status`, `save_chunks`, `get_chunks`, `get_chunk`, `update_chunk_status`, `save_chunk_output(chunk_id, content, short_summary)`, `save_reader_profile`, `get_reader_profile`, `save_chat_message`, `get_chat_history`.
+- `storage/orm.py` (SQLAlchemy tables, private to storage) + `storage/sqlite_adapter.py` (`SqliteRepository`) + Alembic wired at `backend/alembic/` (env.py reads `Settings.database_url`, targets `orm.Base.metadata`), initial migration applied to `minify.db`.
+- **Verify:** `backend/tests/test_storage.py` — round-trip through every repository method against a temp SQLite file, plus a not-found-returns-None/empty-list test. Passing.
 
 ### M2 — Ingestion module
 - PyMuPDF-based: PDF in → raw text + detected heading/chapter structure out. Pure function, no DB/API dependency.
@@ -90,8 +97,7 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 
 ### M7 — Job Runner module
 - `jobs/interface.py`: async execution port (e.g. `run_book_processing(book_id)`), plus `jobs/background_task_adapter.py` using FastAPI `BackgroundTasks`.
-- Runs ingestion → chunker → sequencer/summarizer end-to-end without blocking the caller; writes per-chunk and overall `Book`/`Chunk` status to `Storage` as it progresses (`queued` / `processing` / `ready` / `failed`).
-- Requires `Book`/`Chunk` status fields added to the M1 data models (small additive migration).
+- Runs ingestion → chunker → sequencer/summarizer end-to-end without blocking the caller; writes per-chunk and overall `Book`/`Chunk` status to `Storage` as it progresses (`queued` / `processing` / `ready` / `failed` — already part of the M1 schema).
 - **Verify:** script that enqueues a job for a real PDF and polls the repository's status directly (no HTTP yet) until it reaches `ready`, confirming per-chunk status transitions happen in order.
 
 ### M8 — FastAPI layer (wiring)
