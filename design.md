@@ -117,18 +117,19 @@ Uploading a book is long-running (ingestion + chunking + a sequential LLM pass o
 
 ## 7. Module Breakdown
 
-1. **Shared data models** — `Book`, `Chunk`, `ReaderProfile`, `Summary`, `ChatMessage`. The contracts every module agrees on. `Book` and `Chunk` each carry a processing `status` (e.g. `queued` / `processing` / `ready` / `failed`) so progress can be reported per chunk, not just per book.
+1. **Shared data models** — `Book`, `Chunk`, `ReaderProfile`, `ChatMessage`. The contracts every module agrees on. `Book` and `Chunk` each carry a processing `status` (e.g. `queued` / `processing` / `ready` / `failed`) so progress can be reported per chunk, not just per book.
 2. **Storage module** — SQLAlchemy models + Alembic migrations behind a repository-style interface (`save_book`, `get_chunks`, `save_chunk_output`, `get_chat_history`, `update_book_status`, `update_chunk_status`, etc.). `content` and `short_summary` live as columns directly on `Chunk` (set together in one call), not a separate table.
 3. **Ingestion module** — PDF in, raw text + detected chapter/heading structure out.
 4. **Chunker module** — structure-aware split when chapters are detected; semantic/sliding-window split with overlap as fallback. Pure text-in, chunk-list-out.
-5. **LLM layer (LangChain)** — single place constructing the chat model from config; every other module calls this, never a provider SDK directly.
-6. **Summarizer module** — chunk + reader profile + (optional) prior short summary in; learner-facing **content** + **short summary** out. Both are shaped by the reader profile: content is as detailed/example-driven as the profile calls for, while the short summary still reflects what this reader is looking for in the chunk but stays lean (no examples or elaboration) since its only job is carrying continuity forward. Prompt templates live here only.
-7. **Sequencing step** — plain ordered pass through chunks, carrying each chunk's short summary into the next chunk's summarization call, so the content reads as a coherent whole.
-8. **Chat module** — per-chunk grounded Q&A, built on the same LangChain model, fully independent of the summarizer.
-9. **Job Runner module** — accepts a book-processing job and runs ingestion → chunker → sequencer/summarizer without blocking the request that triggered it, updating each chunk's status in `Storage` as it goes. Locally backed by FastAPI `BackgroundTasks`; the port is what makes a future move to a real task queue additive.
-10. **API layer (FastAPI)** — the only place concrete modules are wired together via dependency injection; routes for upload (hands off to Job Runner and returns immediately), status polling, profile, chunk retrieval, content, and chat.
-11. **Frontend (React + Vite)** — upload view (with a progress indicator driven by status polling), chapter list, reading view per chunk, chat panel per chunk. Talks only to the API.
-12. **Local run** — `uvicorn` for the backend, `npm run dev` for the frontend, SQLite file on disk, `.env` holding local config values.
+5. **LLM layer (LangChain)** — single place constructing the chat model from config; every other module calls this, never a provider SDK directly. Only OpenAI is wired as a concrete provider so far; the dispatch is structured so adding another is additive.
+6. **Reader Profile module** — wraps the `ReaderProfile` schema with the actual business logic: provisioning a sensible default profile the first time one's needed (persisted and reused thereafter), plus creating/fetching custom profiles. Backed by `Storage`, like everything else that persists.
+7. **Summarizer module** — chunk + reader profile + (optional) prior short summary in; learner-facing **content** + **short summary** out. Both are shaped by the reader profile: content is as detailed/example-driven as the profile calls for, while the short summary still reflects what this reader is looking for in the chunk but stays lean (no examples or elaboration) since its only job is carrying continuity forward. Prompt templates live here only.
+8. **Sequencing step** — plain ordered pass through chunks, carrying each chunk's short summary into the next chunk's summarization call, so the content reads as a coherent whole.
+9. **Chat module** — per-chunk grounded Q&A, built on the same LangChain model, fully independent of the summarizer.
+10. **Job Runner module** — accepts a book-processing job and runs ingestion → chunker → sequencer/summarizer without blocking the request that triggered it, updating each chunk's status in `Storage` as it goes. Locally backed by FastAPI `BackgroundTasks`; the port is what makes a future move to a real task queue additive.
+11. **API layer (FastAPI)** — the only place concrete modules are wired together via dependency injection; routes for upload (hands off to Job Runner and returns immediately), status polling, profile, chunk retrieval, content, and chat.
+12. **Frontend (React + Vite)** — upload view (with a progress indicator driven by status polling), chapter list, reading view per chunk, chat panel per chunk. Talks only to the API.
+13. **Local run** — `uvicorn` for the backend, `npm run dev` for the frontend, SQLite file on disk, `.env` holding local config values.
 
 ## 8. Build Order
 
@@ -137,16 +138,18 @@ Uploading a book is long-running (ingestion + chunking + a sequential LLM pass o
 3. Build the ingestion module.
 4. Build the chunker module.
 5. Set up the LangChain-based LLM layer.
-6. Build the summarizer module.
-7. Add the sequencing step for cross-chunk coherence.
-8. Build the chat module.
-9. Build the job runner module (async execution port + local `BackgroundTasks` adapter).
-10. Build the FastAPI layer wiring everything together, including status polling.
-11. Build the React + Vite frontend against the API, including a processing progress indicator.
-12. Wire up local run scripts and `.env` configuration.
+6. Build the reader profile module (default provisioning + custom profiles).
+7. Build the summarizer module.
+8. Add the sequencing step for cross-chunk coherence.
+9. Build the chat module.
+10. Build the job runner module (async execution port + local `BackgroundTasks` adapter).
+11. Build the FastAPI layer wiring everything together, including status polling.
+12. Build the React + Vite frontend against the API, including a processing progress indicator.
+13. Wire up local run scripts and `.env` configuration.
 
 ## 9. Deliberately Out of Scope (for now)
 
 - **Vector database / embedding-based retrieval.** Not part of the current design. The storage module's interface is the seam where this would be added later, as a new adapter, without changing any other module.
 - **Graph-based orchestration (e.g. LangGraph).** The current coherence need is a simple ordered pass with state carried forward — a plain loop, not a graph. This may be revisited if branching, retries, or multi-agent behavior become genuine requirements.
 - **Cloud deployment itself.** The app is built to be deployable later without rework, but the actual deployment (containerization, managed database provisioning, cloud file storage) is not part of this build.
+- **LLM call retry/backoff.** The LLM layer (`llm/`) has no retry, backoff, or rate-limit handling around provider calls — `ChatModelFactory` just returns a configured model; a single transient failure surfaces as-is. Fine while nothing calls the model in bulk; becomes worth revisiting once the Summarizer (M5) is making a long sequential chain of calls across a whole book, where one failure partway through is more consequential. The seam is `llm/langchain_factory.py` — adding retry there (or wrapping the returned model) wouldn't require touching any caller.

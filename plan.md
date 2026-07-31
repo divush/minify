@@ -15,7 +15,8 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 - **M2 — done.**
 - **M3 — done.**
 - **M4 — done.**
-- M5–M10 — not started.
+- **M5 — done.**
+- M6–M10 — not started.
 
 ## Note on scope
 
@@ -42,8 +43,8 @@ Minify/
       chunker/       # interface.py (Chunker, FallbackSplitter protocols) + structural_chunker.py + langchain_splitter.py
       llm/           # interface.py (ChatModelFactory protocol) + langchain_factory.py (provider dispatch from Settings)
       profile/       # interface.py (ProfileService protocol) + service.py (DefaultProfileService, backed by Repository)
-      summarizer/     # chunk+profile+prior short summary -> content + short summary
-      sequencing/     # ordered pass carrying prior short summary forward
+      summarizer/     # interface.py (Summarizer protocol, SummaryResult) + langchain_summarizer.py (two-call chat approach)
+      sequencing/     # interface.py (Sequencer protocol) + plain_sequencer.py (generator-based ordered pass)
       chat/          # per-chunk grounded Q&A
       jobs/          # async execution port; local BackgroundTasks adapter
       api/           # FastAPI routes + DI wiring
@@ -95,12 +96,16 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - `llm/langchain_factory.py`'s `LangChainChatModelFactory` dispatches on `Settings.llm_provider` (only `"openai"` → `ChatOpenAI` wired so far; unsupported provider raises a clear `ValueError`), lazily constructs and caches the model instance. New dep: `uv add langchain-openai`.
 - `profile/interface.py`: `ProfileService` protocol — `get_default()`, `create(background, intent, label=None)`, `get(profile_id)`. `profile/service.py`'s `DefaultProfileService` implements it against `Repository`; `get_default()` provisions and persists a sensible default profile (`label="General reader"`, generic background/intent copy — all easily editable) on first call, reusing it thereafter. Required one small additive method on `Repository`/`SqliteRepository`: `get_default_reader_profile()` (queries `is_default == True`) — this is exactly the piece M1 deliberately deferred to M4.
 - **Decided this session:** automated tests don't make live API calls (shouldn't need real secrets/network to pass) — `tests/test_llm.py` verifies the factory builds the right LangChain class/model name from `Settings` and rejects unsupported providers, which works without a valid key since LangChain doesn't authenticate until `.invoke()` is called. `backend/scripts/verify_llm.py` is a standalone script (not run by pytest) for a real round-trip call once you add `LLM_API_KEY` to your own `.env`.
-- **Verify:** `backend/tests/test_llm.py` + `backend/tests/test_profile.py`, 16/16 passing across M1-M4. `scripts/verify_llm.py` confirmed to fail with a friendly message when no key is set (correct behavior); live call left for you to run once a real key is in place.
+- **Verify:** `backend/tests/test_llm.py` + `backend/tests/test_profile.py`, 16/16 passing across M1-M4. `scripts/verify_llm.py` confirmed to fail with a friendly message when no key is set (correct behavior); then confirmed working live with a real key (`gpt-4o-mini`, for cost) — got back a real response.
+- **Known limitation, noted in `design.md` §9:** no retry/backoff around LLM calls. Fine for now (nothing calls the model in bulk yet); revisit once M5's sequential summarization chain makes this a real reliability concern.
 
-### M5 — Summarizer + Sequencing step
-- `summarizer/`: chunk + profile + optional prior short summary → learner-facing content + short summary, both shaped by reader profile (content detailed/example-driven per profile; short summary reflects what this reader cares about but stays lean). Prompt templates live here only.
-- `sequencing/`: plain ordered loop over chunks, threading each chunk's short summary into the next chunk's summarizer call.
-- **Verify:** end-to-end script — run ingestion → chunker → sequencer/summarizer over one real short PDF, persist results via storage, manually inspect that later chunks' content reads coherently with earlier ones.
+### M5 — Summarizer + Sequencing step ✅
+- `summarizer/interface.py`: `SummaryResult` (`content`, `short_summary` — intermediate, not persisted itself) + `Summarizer` protocol (`summarize(chunk, profile, prior_short_summary) -> SummaryResult`). Pure function, no Storage dependency, same pattern as Ingestion/Chunker.
+- `summarizer/langchain_summarizer.py`'s `LangChainSummarizer` — ran the real verify script once (see below), which surfaced that `content` occasionally came back with chatty chat-assistant preamble/closing ("Sure! Here's..." / "Would you like me to explain more?"), wrong for text that's stored and shown directly to the reader. Fixed by explicitly instructing both prompts not to do that. Then **revised twice more per user feedback**, landing on: two calls, **not sharing conversation history**, `content` generated from `chunk.raw_text` first, then `short_summary` generated from that *generated content* (not from `raw_text` again) — a deliberate cost saving, since `raw_text` can be up to 5000 words for fallback chunks while `content` is generally much shorter, so the second call's input is far cheaper. `content` is requested in Markdown. Prompt wording lives only in this file.
+- `sequencing/interface.py`: `Sequencer` protocol — `run(chunks, profile, initial_short_summary=None) -> Iterator[tuple[Chunk, SummaryResult]]`. A **generator**, not a list-returning function, so the Job Runner (M7) can persist/update status per chunk instead of waiting for the whole book — real progress reporting depends on this. `initial_short_summary` is the resumability hook M7 will use later.
+- `sequencing/plain_sequencer.py`'s `PlainSequencer` — the literal "plain ordered pass": iterate chunks, call the summarizer, yield `(chunk, result)`, carry `result.short_summary` forward as the next `prior_short_summary`. No Storage dependency either.
+- **Verify:** `backend/tests/test_summarizer.py` (6 tests, fake chat model — asserts profile/chunk end up in the content call, asserts the short_summary call receives the *generated content* rather than `raw_text`, asserts both calls forbid conversational filler) + `backend/tests/test_sequencing.py` (3 tests, fake summarizer — asserts order, short-summary threading, `initial_short_summary` handling, empty-list case). All offline, no real network. 25/25 passing across M1-M5.
+- `backend/scripts/verify_summarizer.py`: manual, real-LLM script (small 3-chapter synthetic PDF → real `PyMuPdfIngestor`/`StructuralChunker` → chunks persisted in a temp SQLite `Repository` → real `PlainSequencer`/`LangChainSummarizer` → prints each chunk's content/short_summary for manual coherence review). Run for real with `gpt-4.1-mini`: coherence across chapters worked as intended (later chapters built on earlier ones without re-explaining), confirmed the chat-filler issue above, then confirmed fixed after the prompt revisions (rerun recommended to re-confirm after the raw_text→content redesign, not yet done).
 
 ### M6 — Chat module
 - Per-chunk grounded Q&A, built on the same LLM layer, independent of summarizer.
