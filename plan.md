@@ -17,7 +17,9 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 - **M4 — done.**
 - **M5 — done.**
 - **M6 — done.**
-- M7–M10 — not started.
+- **M7 — done.**
+- **M8 — done.**
+- M9–M10 — not started.
 
 ## Note on scope
 
@@ -47,8 +49,8 @@ Minify/
       summarizer/     # interface.py (Summarizer protocol, SummaryResult) + langchain_summarizer.py (two-call chat approach)
       sequencing/     # interface.py (Sequencer protocol) + plain_sequencer.py (generator-based ordered pass)
       chat/          # interface.py (Chat protocol) + langchain_chat.py (LangChainChat, grounded on content)
-      jobs/          # async execution port; local BackgroundTasks adapter
-      api/           # FastAPI routes + DI wiring
+      jobs/          # interface.py (JobRunner protocol) + pipeline_runner.py (PipelineJobRunner, synchronous orchestration)
+      api/           # main.py (app + /health) + dependencies.py (DI providers) + routes.py (5 endpoints) + schemas.py
       config.py      # Pydantic Settings
     tests/
     .env.example
@@ -117,15 +119,22 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - **Verify:** `backend/tests/test_chat.py` (4 tests, fake chat model — asserts grounding is `content`-only and `raw_text` never appears, asserts empty history sends just `[system, question]`, asserts non-empty history converts to alternating `Human`/`AI` messages ending with the new question). All offline. 29/29 passing across M1-M6.
 - `backend/scripts/verify_chat.py`: manual, real-LLM script (same synthetic biology PDF → real ingest/chunk → one chunk summarized for real to get genuine `content` → a short sequence of grounded follow-up questions via the real `LangChainChat`, building `history` across turns, including one deliberately off-topic question to check the model declines rather than guesses). Run yourself once ready.
 
-### M7 — Job Runner module
-- `jobs/interface.py`: async execution port (e.g. `run_book_processing(book_id)`), plus `jobs/background_task_adapter.py` using FastAPI `BackgroundTasks`.
-- Runs ingestion → chunker → sequencer/summarizer end-to-end without blocking the caller; writes per-chunk and overall `Book`/`Chunk` status to `Storage` as it progresses (`queued` / `processing` / `ready` / `failed` — already part of the M1 schema).
-- **Verify:** script that enqueues a job for a real PDF and polls the repository's status directly (no HTTP yet) until it reaches `ready`, confirming per-chunk status transitions happen in order.
+### M7 — Job Runner module ✅
+- `jobs/interface.py`: single `JobRunner` protocol — `process_book(book_id, pdf_bytes) -> None`.
+- **Decided this session: the FastAPI `BackgroundTasks` wiring is deferred to M8, not built here.** `process_book` is a plain, synchronous method — calling it directly blocks until the whole book is done. "Non-blocking for an HTTP client" is achieved entirely by *how the caller invokes it* (M8's API route will hand this same method to `BackgroundTasks.add_task(...)` instead of calling it inline). Keeping this decision out of `jobs/` is what makes a future move to a real task queue (Celery, RQ, ...) a change to the API layer's wiring only, never to this module — genuinely "swappable without touching callers." Consequence: no `background_task_adapter.py`; the adapter is `jobs/pipeline_runner.py`'s `PipelineJobRunner`, with no FastAPI import at all.
+- `PipelineJobRunner(ingestor, chunker, sequencer, repository)`: assumes the `Book` row already exists (created by the caller, status `"processing"`) — looks it up (for `reader_profile_id`) and the `ReaderProfile` via `Repository`, runs `Ingestor` → `Chunker` → builds+saves `Chunk` rows (status `"queued"`), then steps through `Sequencer.run(chunks, profile)` **manually via `next()`** (not a plain `for` loop) so each chunk can be marked `"processing"` immediately before the Sequencer does that chunk's LLM calls, then `save_chunk_output` + `"ready"` once it returns. Finally marks the `Book` `"ready"`. The whole method is wrapped in one `try/except`: on any failure, `Book` status → `"failed"`, then re-raises.
+- Per-chunk status is genuinely three-state (`queued` → `processing` → `ready`), not binary — gives real-time visibility into which chunk is actively being worked on.
+- PDF bytes are passed in-memory (no File Storage module yet, out of scope here); if the process crashes mid-run the upload is lost — noted limitation, not solved. No per-chunk failure attribution either (the chunk mid-flight when a failure hits just stays `"processing"`; book-level `"failed"` is the signal for now). Resumability (`initial_short_summary`) still unused, as previously noted.
+- **Verify:** `backend/tests/test_jobs.py` (3 tests, fake `Ingestor`/`Chunker`/`Sequencer`/`Repository` — asserts the full pipeline runs and marks the book `"ready"`; asserts each chunk's status transitions happen fully in order, one chunk at a time, not all `"processing"` upfront; asserts a mid-book failure marks the book `"failed"` and re-raises). All offline. 32/32 passing across M1-M7.
+- `backend/scripts/verify_jobs.py`: manual, real-LLM script — same synthetic biology PDF, a real `Book`+`ReaderProfile` saved via a temp SQLite `Repository`, `PipelineJobRunner.process_book` run on a background `threading.Thread` while the main thread polls the repository every ~1s and prints status changes as observed — genuinely demonstrating non-blocking execution and in-order `queued`→`processing`→`ready` transitions, not just asserting it in a unit test. Run yourself once ready.
 
-### M8 — FastAPI layer (wiring)
-- Routes from design §6 diagram: `POST /books` (hands off to Job Runner, returns immediately with `book_id` + `processing` status), `GET /books/{id}/status` (poll target for progress), `GET /books/{id}/chunks`, `GET /chunks/{id}/content`, `POST /chunks/{id}/chat`.
-- This is the single place concrete adapters (SQLite, chosen LLM provider, job runner adapter) get wired via DI — no other module should need touching to add a new adapter later.
-- **Verify:** integration tests hitting the FastAPI app (TestClient) covering upload→poll status→chunks→summary→chat flow.
+### M8 — FastAPI layer (wiring) ✅
+- `api/dependencies.py`: one `@lru_cache`-decorated provider function per adapter (`get_engine`, `get_repository`, `get_chat_model_factory`, `get_profile_service`, `get_ingestor`, `get_chunker`, `get_summarizer`, `get_sequencer`, `get_chat`, `get_job_runner`), chained via nested `Depends(...)` — this is what lets tests override one low-level provider (`get_chat_model_factory`, or `get_engine`) and have every provider built on top of it (`get_summarizer`, `get_sequencer`, `get_chat`, `get_job_runner`) pick up the override automatically. One gotcha hit and fixed while building this: `Settings` (a Pydantic model) isn't hashable, so `get_engine`/`get_chat_model_factory` can't take it as a `Depends`-injected argument under `@lru_cache` — they call `get_settings()` directly inside their bodies instead.
+- `api/routes.py`: the five routes from design §6, all in one `APIRouter` (five endpoints didn't justify a routes package). `POST /books` always processes under `ProfileService.get_default()` (no profile-picker parameter — there's no profile-creation route yet either, so a picker would let you choose between profiles you have no way to create). It builds+saves the `Book` row itself (status `"processing"`), reads the upload's bytes, and hands off via `background_tasks.add_task(job_runner.process_book, book.id, pdf_bytes)` — **the only place `BackgroundTasks` is imported anywhere in the codebase**, exactly as deferred from M7. `POST /chunks/{id}/chat` 409s if `chunk.content is None` (nothing to ground on yet); otherwise looks up the chunk's book → reader profile, fetches prior history, calls `chat.respond(...)`, then persists both the new question and the answer as `ChatMessage` rows — realizing the "persistence is the caller's job" contract `Chat` was built around in M6.
+- `api/schemas.py`: small purpose-built response models (`BookUploadResponse`, `BookStatusResponse`, `ChunkSummary`, `ChunkContentResponse`, `ChatRequest`, `ChatResponse`) rather than serializing domain models directly — e.g. the chunk list doesn't carry `raw_text`.
+- `api/main.py`: gains `app.include_router(router)`; `/health` unchanged. Needed one new dependency, `python-multipart` (required by FastAPI for file-upload/form parsing).
+- **Verify:** `backend/tests/test_api.py` (3 tests) — overrides just `get_engine` (temp SQLite file) and `get_chat_model_factory` (fake chat model returning a canned string) via `app.dependency_overrides`; everything else (`PyMuPdfIngestor`, `StructuralChunker`, `PlainSequencer`, `PipelineJobRunner`, `SqliteRepository`) runs for real. One test drives the full flow — upload a synthetic PDF → poll status (`TestClient` runs `BackgroundTasks` synchronously as part of the request, so the book is already `"ready"` by the time the response comes back) → list chunks → get content → chat, then a follow-up chat call confirming prior Q/A shows up as history in the next LLM call. Plus two negative-path tests (404 on a missing book, 409 chatting with an unsummarized chunk). All offline. 35/35 passing across M1-M8.
+- This is the first milestone where the whole app is actually exercisable end-to-end outside of pytest/scripts — run `uvicorn`, `curl -F file=@some.pdf http://localhost:8000/books`, poll `/books/{id}/status`, chat with a chunk once ready, using a real `.env` key.
 
 ### M9 — Frontend
 - Upload View, Chapter List, Reading View, Chat Panel (design §6), talking only to the REST API, no shared code with backend.

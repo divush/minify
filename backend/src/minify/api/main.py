@@ -1,15 +1,15 @@
 """FastAPI entrypoint.
 
-Per design.md, this is meant to be the single place concrete adapters
-(SQLite repository, LLM provider, job runner, etc.) get wired together via
-dependency injection — modules themselves never construct their own
-dependencies. Only `/health` exists so far (M0); real routes and DI wiring
-land in M8.
+Per design.md, this is the single place concrete adapters (SQLite
+repository, LLM provider, job runner, etc.) get wired together via
+dependency injection — see `api/dependencies.py` for the actual provider
+functions; modules themselves never construct their own dependencies.
 """
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from minify.api.routes import router
 from minify.config import get_settings
 
 settings = get_settings()
@@ -22,6 +22,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(router)
 
 
 @app.get("/health")
