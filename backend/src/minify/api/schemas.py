@@ -6,6 +6,8 @@ Chapter List view doesn't need to carry `raw_text`), not the full internal
 row shape.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from minify.models import Status
@@ -66,3 +68,8 @@ class ProfileUpdateRequest(BaseModel):
     label: str | None = None
     background: str
     intent: str
+
+
+class ChatMessageResponse(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str

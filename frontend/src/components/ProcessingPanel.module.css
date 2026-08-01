@@ -1,0 +1,117 @@
+.wrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  min-height: 100vh;
+}
+
+.card {
+  width: min(480px, 100%);
+}
+
+.backLink {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  text-decoration: none;
+}
+.backLink:hover {
+  color: var(--ink);
+}
+
+.eyebrow {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-faint);
+  margin-top: 18px;
+  margin-bottom: 6px;
+}
+
+.card h1 {
+  font-family: var(--serif-display);
+  font-size: 26px;
+  font-weight: 400;
+  margin: 0 0 22px;
+}
+
+.list {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 14.5px;
+}
+
+.pip {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  flex: 0 0 auto;
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+.list li[data-status='processing'] .pip {
+  background: var(--gold);
+  box-shadow: 0 0 0 4px var(--gold-soft);
+}
+.list li[data-status='ready'] .pip {
+  background: var(--accent);
+}
+
+.chapTitle {
+  flex: 1 1 auto;
+}
+.chapState {
+  font-size: 12px;
+  color: var(--ink-faint);
+  min-width: 76px;
+  text-align: right;
+}
+.list li[data-status='ready'] .chapState {
+  color: var(--accent);
+}
+.list li[data-status='processing'] .chapState {
+  color: var(--gold);
+}
+
+.status {
+  color: var(--ink-faint);
+  font-size: 13.5px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.counter {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.track {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--paper-sunken);
+  overflow: hidden;
+  display: block;
+}
+.track > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.5s ease;
+}

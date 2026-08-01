@@ -105,9 +105,18 @@ def test_full_flow_upload_status_chunks_content_chat(client, fake_model):
     content_body = content_response.json()
     assert content_body["content"] == "FAKE_RESPONSE"
 
+    history_response = client.get(f"/chunks/{first_chunk_id}/chat")
+    assert history_response.status_code == 200
+    assert history_response.json() == []
+
     chat_response = client.post(f"/chunks/{first_chunk_id}/chat", json={"question": "What is this about?"})
     assert chat_response.status_code == 200
     assert chat_response.json()["answer"] == "FAKE_RESPONSE"
+
+    history_after = client.get(f"/chunks/{first_chunk_id}/chat").json()
+    assert [m["role"] for m in history_after] == ["user", "assistant"]
+    assert history_after[0]["content"] == "What is this about?"
+    assert history_after[1]["content"] == "FAKE_RESPONSE"
 
     calls_before_followup = len(fake_model.calls)
     client.post(f"/chunks/{first_chunk_id}/chat", json={"question": "Tell me more."})
@@ -116,6 +125,11 @@ def test_full_flow_upload_status_chunks_content_chat(client, fake_model):
     followup_text = " ".join(m.content for m in followup_messages)
     assert "What is this about?" in followup_text
     assert "FAKE_RESPONSE" in followup_text
+
+
+def test_chat_history_404_when_chunk_missing(client):
+    response = client.get("/chunks/does-not-exist/chat")
+    assert response.status_code == 404
 
 
 def test_list_books_returns_newest_first_with_chunk_counts(client):

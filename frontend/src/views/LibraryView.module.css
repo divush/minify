@@ -1,0 +1,75 @@
+.inner {
+  width: min(640px, 100%);
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: 40px clamp(20px, 4vw, 40px) 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.brandMark {
+  font-family: var(--serif-display);
+  font-size: 22px;
+  font-style: italic;
+}
+
+.profileChip {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--paper-sunken);
+  border-radius: 100px;
+  padding: 6px 8px 6px 10px;
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease;
+}
+.profileChip:hover,
+.profileChip:focus-visible {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  flex: 0 0 auto;
+}
+.editHint {
+  color: var(--accent);
+  font-weight: 600;
+  margin-left: 2px;
+}
+
+.libraryLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  margin-bottom: 10px;
+}
+
+.bookList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.status {
+  font-size: 13.5px;
+  color: var(--ink-faint);
+}
+.error {
+  font-size: 13.5px;
+  color: #b3483f;
+}

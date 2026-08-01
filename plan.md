@@ -19,7 +19,7 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 - **M6 — done.**
 - **M7 — done.**
 - **M8 — done.**
-- **M9 — design direction frozen** (see below); frontend not yet built.
+- **M9 — done.** Real Vite/React frontend built against the frozen design; in-browser click-through still to be done by you (see M9 section).
 - M10 — not started.
 
 ## Note on scope
@@ -51,14 +51,19 @@ Minify/
       sequencing/     # interface.py (Sequencer protocol) + plain_sequencer.py (generator-based ordered pass)
       chat/          # interface.py (Chat protocol) + langchain_chat.py (LangChainChat, grounded on content)
       jobs/          # interface.py (JobRunner protocol) + pipeline_runner.py (PipelineJobRunner, synchronous orchestration)
-      api/           # main.py (app + /health) + dependencies.py (DI providers) + routes.py (5 endpoints) + schemas.py
+      api/           # main.py (app + /health) + dependencies.py (DI providers) + routes.py (9 endpoints) + schemas.py
       config.py      # Pydantic Settings
     tests/
     .env.example
-  frontend/          # React + Vite, separate app
+  frontend/          # React + Vite, separate app (react-router-dom, @tanstack/react-query, react-markdown)
     src/
-      views/         # Upload, ChapterList, Reader, ChatPanel
-      api/           # thin REST client
+      views/         # LibraryView, BookView (routes: "/", "/books/:bookId")
+      components/    # BookCard, UploadRow, ProfileModal, ProcessingPanel,
+                      #   ChapterSpine, ReadingPane, MarginaliaPanel
+      hooks/         # useBooks, useBook, useChunkContent, useChat, useProfile
+                      #   (TanStack Query wrappers; refetchInterval drives all polling)
+      api/           # types.ts (mirrors backend schemas) + client.ts (typed fetch per route)
+      index.css      # design tokens ported from the frozen prototype
   design.md
   plan.md            # this file
   README.md          # local run instructions
@@ -144,9 +149,9 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - `api/schemas.py`: `BookSummary`, `ProfileResponse`, `ProfileUpdateRequest`.
 - **Verify:** extended `test_storage.py`, `test_profile.py`, `test_api.py` (7 new tests: list-books ordering + empty case, profile update + missing-id error, the three new routes end-to-end). 42/42 passing across M1-M8.
 
-### M9 — Frontend
+### M9 — Frontend ✅
 
-**Design direction — frozen this session, as a static/click-through HTML prototype (no build tools, no real API calls), reviewed and approved before any real React code gets written.** Not an Artifact tied to this repo — it lives at the published link below; treat the decisions here as the spec for the real Vite/React build.
+**Design direction — frozen in an earlier session, as a static/click-through HTML prototype (no build tools, no real API calls), reviewed and approved before any real React code gets written.** Not an Artifact tied to this repo — it lives at the published link below; the decisions below were the spec the real build (further down) implements.
 
 - Concept: a "reading room," not a SaaS dashboard — a book's spine, margins, and marginalia rather than cards/sidebars borrowed from generic app templates.
 - Palette: warm bone-paper background, a deep blackened-teal "ink" for text, a muted bookcloth-green accent, an antique gold reserved only for the chat/marginalia layer and in-progress states. Both light and dark themes defined via CSS custom properties.
@@ -160,7 +165,16 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
   - **Reader profile** — a modal to edit the *single* profile's label/background/intent (label, edit affordance in the library header, mirrored in the reading view's spine). **Decided this session: one editable profile, no multi-profile picker/switcher** — matches `ProfileService.get_default()`'s current behavior; revisit only if multi-profile support becomes a real need.
 - **Backend gaps this design surfaced — resolved.** The Library and profile-edit views needed API support that didn't exist in M8; see the addendum at the end of the M8 section above (`GET /books`, `GET /profile`, `PATCH /profile`, plus the underlying `Repository.list_books()`/`ProfileService.update()` additions).
 - Upload View shows a progress indicator (per-chapter, not just a spinner) driven by polling `GET /books/{id}/status` until processing completes — confirmed workable in the prototype's live countdown animation.
-- **Verify (for the real build):** manual run through the full flow in a browser — upload a PDF, watch progress update, see the library update, read a chunk's tailored content, chat with a chunk, edit the reader profile.
+
+**Real build — this session.**
+
+- **Decided (via two questions, both recommended options taken):** `react-router-dom` for real URLs (`/`, `/books/:bookId` — one route per book, internally rendering Processing vs. Reading vs. a failed-state depending on `status`, not separate routes, since "is this book done yet" is state, not navigation); `@tanstack/react-query` for all polling (`refetchInterval`) instead of hand-rolled `setInterval`. Also added `react-markdown` (not asked about, not really optional — the Summarizer's `content` is genuine Markdown; rendering it as raw text would show literal `**`/`#` characters. Renders via React elements, not `dangerouslySetInnerHTML`, so no separate sanitization step needed for LLM-generated text).
+- **One more small backend gap found while planning this build, same category as the earlier addendum:** there was no way to fetch a chunk's *existing* chat history, only `POST /chunks/{id}/chat` (ask a new question) — a page refresh or switching chapters and back would silently lose the Marginalia thread even though `Repository.get_chat_history()` already persisted it. Added `GET /chunks/{chunk_id}/chat` (+ `ChatMessageResponse` schema), tested in `test_api.py` (empty-history case, then reflects a prior question/answer).
+- No fake browser-chrome frame in the real build — that device-window mockup (traffic-light dots, fake URL bar) only existed to present the prototype inside an Artifact; the real app fills the actual browser tab.
+- `frontend/src/`: `api/types.ts` + `api/client.ts` (typed fetch wrapper per route, extending the `VITE_API_URL`-driven pattern already in `client.ts` from M0); `hooks/` — thin TanStack Query wrappers, one per resource (`useBooks`, `useBook` [status + chunks, each polls independently based on its own returned statuses], `useChunkContent`, `useChat`, `useProfile`); `views/LibraryView` + `views/BookView`; `components/` — `BookCard`, `UploadRow` (real drag-and-drop/file-picker via a `<label>`-wrapped hidden file input), `ProfileModal`, `ProcessingPanel`, `ChapterSpine`, `ReadingPane` (Markdown via `react-markdown`), `MarginaliaPanel` (chat, with an optimistic local echo of the just-asked question while waiting on the real answer). `index.css` carries the frozen prototype's design tokens (palette, type stacks, light/dark) verbatim; every component's own `.module.css` builds on those tokens rather than redefining them.
+- Removed the M0 scaffold entirely: the old health-check `App.tsx`/`App.css` are gone (a broken/unreachable backend now surfaces as an inline error on the Library query, which is strictly more useful than a standalone ping).
+- **Verify:** `uv run pytest` — 43/43 passing (new chat-history route test included). `npx tsc -b` compiles the frontend with no type errors; both dev servers (`uvicorn`, `npm run dev`) start cleanly and every module/CSS file transforms without error. **Not yet done: an actual in-browser click-through** — I don't have a way to drive a real browser from here, so upload a real PDF yourself, watch the library/per-chapter progress update live, read a chapter's rendered Markdown content, chat with a chapter across a refresh, and edit the reader profile, to confirm the UI itself looks and behaves as intended.
+- **Known, deliberately out of scope:** `npm audit` flags a high-severity advisory in `react-router` (an RSC-mode server-action CSRF bypass) — this app is a pure client-side SPA with no RSC/server actions, so that attack vector doesn't apply here, but worth knowing about if `react-router` gets used in a different way later.
 
 ### M10 — Local run polish
 - README with setup/run instructions, `.env.example` finalized, any convenience scripts (e.g. a `Justfile`/Makefile for `run backend` / `run frontend`).

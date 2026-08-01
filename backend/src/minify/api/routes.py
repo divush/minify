@@ -22,6 +22,7 @@ from minify.api.schemas import (
     BookStatusResponse,
     BookSummary,
     BookUploadResponse,
+    ChatMessageResponse,
     ChatRequest,
     ChatResponse,
     ChunkContentResponse,
@@ -123,6 +124,20 @@ def get_chunk_content(
     return ChunkContentResponse(
         id=chunk.id, index=chunk.index, heading=chunk.heading, content=chunk.content, status=chunk.status
     )
+
+
+@router.get("/chunks/{chunk_id}/chat", response_model=list[ChatMessageResponse])
+def get_chunk_chat_history(
+    chunk_id: str, repository: Repository = Depends(get_repository)
+) -> list[ChatMessageResponse]:
+    chunk = repository.get_chunk(chunk_id)
+    if chunk is None:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    return [
+        ChatMessageResponse(role=message.role, content=message.content)
+        for message in repository.get_chat_history(chunk_id)
+    ]
 
 
 @router.post("/chunks/{chunk_id}/chat", response_model=ChatResponse)
