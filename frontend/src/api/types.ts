@@ -32,6 +32,7 @@ export interface ChunkSummary {
   page_start: number
   page_end: number
   status: Status
+  is_read: boolean
 }
 
 export interface ChunkContentResponse {
@@ -42,10 +43,15 @@ export interface ChunkContentResponse {
   page_end: number
   content: string | null
   status: Status
+  is_read: boolean
 }
 
 export interface ChunkUpdateRequest {
   heading: string
+}
+
+export interface ChunkReadUpdateRequest {
+  is_read: boolean
 }
 
 export interface ChatMessageResponse {

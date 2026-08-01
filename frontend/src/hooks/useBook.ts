@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { confirmBook, getBookStatus, listBookChunks, updateChunkHeading } from '../api/client'
+import { confirmBook, getBookStatus, listBookChunks, markChunkRead, updateChunkHeading } from '../api/client'
 
 /** Polls while the book itself is still queued/processing. */
 export function useBookStatus(bookId: string) {
@@ -44,6 +44,19 @@ export function useRenameChunk(bookId: string) {
   return useMutation({
     mutationFn: ({ chunkId, heading }: { chunkId: string; heading: string }) =>
       updateChunkHeading(chunkId, heading),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['book', bookId, 'chunks'] })
+    },
+  })
+}
+
+/** Toggles a chunk's reader-progress "read" flag — orthogonal to its
+ * processing `status`, only meaningful once the book is `ready`. */
+export function useMarkChunkRead(bookId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ chunkId, isRead }: { chunkId: string; isRead: boolean }) =>
+      markChunkRead(chunkId, isRead),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['book', bookId, 'chunks'] })
     },

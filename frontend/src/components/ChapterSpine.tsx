@@ -40,14 +40,16 @@ export default function ChapterSpine({ bookId, selectedChunkId, onSelect, isOpen
             <li key={chunk.id}>
               <button
                 type="button"
+                className={chunk.is_read ? styles.read : undefined}
                 aria-current={chunk.id === selectedChunkId}
                 onClick={() => onSelect(chunk.id)}
               >
-                <span className={styles.pip} />
+                <span className={`${styles.pip} ${chunk.is_read ? styles.read : ''}`} />
                 <span className={styles.tocText}>
                   <span>{chunk.heading ?? `Section ${chunk.index + 1}`}</span>
                   <span className={styles.tocPages}>
                     pp. {chunk.page_start}–{chunk.page_end}
+                    {chunk.is_read && ' · read'}
                   </span>
                 </span>
               </button>

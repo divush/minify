@@ -90,6 +90,7 @@ class Chunk(BaseModel):
     content: str | None = None  # reader-facing writeup, tailored to the profile; never carried forward
     short_summary: str | None = None  # leaner, profile-aware continuity artifact carried into the next chunk's summarization call
     status: Status  # per-chunk processing state; drives per-chunk progress reporting
+    is_read: bool = False  # reader progress: has the reader marked this chapter as read? Orthogonal to `status`.
     created_at: datetime = Field(default_factory=_now_ist)  # IST, naive (see _now_ist)
 
 

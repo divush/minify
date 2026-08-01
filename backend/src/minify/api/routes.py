@@ -29,6 +29,7 @@ from minify.api.schemas import (
     ChatRequest,
     ChatResponse,
     ChunkContentResponse,
+    ChunkReadUpdateRequest,
     ChunkSummary,
     ChunkUpdateRequest,
     ProfileResponse,
@@ -119,6 +120,7 @@ def list_book_chunks(
             page_start=chunk.page_start,
             page_end=chunk.page_end,
             status=chunk.status,
+            is_read=chunk.is_read,
         )
         for chunk in repository.get_chunks(book_id)
     ]
@@ -160,6 +162,7 @@ def get_chunk_content(
         page_end=chunk.page_end,
         content=chunk.content,
         status=chunk.status,
+        is_read=chunk.is_read,
     )
 
 
@@ -186,6 +189,28 @@ def update_chunk(
         page_start=chunk.page_start,
         page_end=chunk.page_end,
         status=chunk.status,
+        is_read=chunk.is_read,
+    )
+
+
+@router.patch("/chunks/{chunk_id}/read", response_model=ChunkSummary)
+def mark_chunk_read(
+    chunk_id: str, update: ChunkReadUpdateRequest, repository: Repository = Depends(get_repository)
+) -> ChunkSummary:
+    chunk = repository.get_chunk(chunk_id)
+    if chunk is None:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    repository.mark_chunk_read(chunk_id, update.is_read)
+
+    return ChunkSummary(
+        id=chunk.id,
+        index=chunk.index,
+        heading=chunk.heading,
+        page_start=chunk.page_start,
+        page_end=chunk.page_end,
+        status=chunk.status,
+        is_read=update.is_read,
     )
 
 

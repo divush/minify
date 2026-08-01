@@ -15,6 +15,11 @@ export default function BookView() {
   const [showMarginalia, setShowMarginalia] = useState(false)
   const [mobileSpineOpen, setMobileSpineOpen] = useState(false)
 
+  const selectChunk = (id: string) => {
+    setSelectedChunkId(id)
+    setMobileSpineOpen(false)
+  }
+
   if (isLoading) {
     return <div className={styles.centered}>Loading…</div>
   }
@@ -46,14 +51,13 @@ export default function BookView() {
       <ChapterSpine
         bookId={bookId!}
         selectedChunkId={selectedChunkId}
-        onSelect={(id) => {
-          setSelectedChunkId(id)
-          setMobileSpineOpen(false)
-        }}
+        onSelect={selectChunk}
         isOpenOnMobile={mobileSpineOpen}
       />
       <ReadingPane
+        bookId={bookId!}
         chunkId={selectedChunkId}
+        onSelect={selectChunk}
         onAsk={() => setShowMarginalia(true)}
         onToggleSpine={() => setMobileSpineOpen((open) => !open)}
       />

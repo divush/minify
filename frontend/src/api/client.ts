@@ -5,6 +5,7 @@ import type {
   ChatMessageResponse,
   ChatResponse,
   ChunkContentResponse,
+  ChunkReadUpdateRequest,
   ChunkSummary,
   ChunkUpdateRequest,
   ProfileResponse,
@@ -61,6 +62,15 @@ export async function confirmBook(bookId: string): Promise<BookStatusResponse> {
 export async function updateChunkHeading(chunkId: string, heading: string): Promise<ChunkSummary> {
   const body: ChunkUpdateRequest = { heading }
   return request(`/chunks/${chunkId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export async function markChunkRead(chunkId: string, isRead: boolean): Promise<ChunkSummary> {
+  const body: ChunkReadUpdateRequest = { is_read: isRead }
+  return request(`/chunks/${chunkId}/read`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

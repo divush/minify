@@ -41,6 +41,7 @@ class ChunkSummary(BaseModel):
     page_start: int
     page_end: int
     status: Status
+    is_read: bool
 
 
 class ChunkContentResponse(BaseModel):
@@ -51,10 +52,15 @@ class ChunkContentResponse(BaseModel):
     page_end: int
     content: str | None  # None if not summarized yet
     status: Status
+    is_read: bool
 
 
 class ChunkUpdateRequest(BaseModel):
     heading: str
+
+
+class ChunkReadUpdateRequest(BaseModel):
+    is_read: bool
 
 
 class ChatRequest(BaseModel):

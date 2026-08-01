@@ -85,6 +85,12 @@
   background: var(--accent);
   flex: 0 0 auto;
 }
+.toc .pip.read {
+  background: var(--ink-faint);
+}
+.toc button.read .tocText {
+  opacity: 0.62;
+}
 .toc button:hover {
   background: var(--paper-sunken);
   color: var(--ink);

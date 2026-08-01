@@ -63,6 +63,7 @@ class ChunkRow(Base):
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     short_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String)
+    is_read: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime]
 
 

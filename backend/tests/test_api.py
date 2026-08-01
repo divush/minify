@@ -119,7 +119,16 @@ def test_full_flow_upload_confirm_status_chunks_content_chat(client, fake_model)
 
     chunks = client.get(f"/books/{book_id}/chunks").json()
     assert all(c["status"] == "ready" for c in chunks)
+    assert all(c["is_read"] is False for c in chunks)
     assert chunks[0]["heading"] == "Renamed Chapter"
+
+    mark_read_response = client.patch(f"/chunks/{first_chunk_id}/read", json={"is_read": True})
+    assert mark_read_response.status_code == 200
+    assert mark_read_response.json()["is_read"] is True
+    assert client.get(f"/books/{book_id}/chunks").json()[0]["is_read"] is True
+
+    unmark_read_response = client.patch(f"/chunks/{first_chunk_id}/read", json={"is_read": False})
+    assert unmark_read_response.json()["is_read"] is False
 
     content_response = client.get(f"/chunks/{first_chunk_id}/content")
     assert content_response.status_code == 200
@@ -241,6 +250,11 @@ def test_confirm_book_409_when_not_awaiting_confirmation(client):
 
 def test_update_chunk_404_when_missing(client):
     response = client.patch("/chunks/does-not-exist", json={"heading": "New title"})
+    assert response.status_code == 404
+
+
+def test_mark_chunk_read_404_when_missing(client):
+    response = client.patch("/chunks/does-not-exist/read", json={"is_read": True})
     assert response.status_code == 404
 
 
