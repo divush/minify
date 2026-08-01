@@ -16,7 +16,8 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 - **M3 — done.**
 - **M4 — done.**
 - **M5 — done.**
-- M6–M10 — not started.
+- **M6 — done.**
+- M7–M10 — not started.
 
 ## Note on scope
 
@@ -45,7 +46,7 @@ Minify/
       profile/       # interface.py (ProfileService protocol) + service.py (DefaultProfileService, backed by Repository)
       summarizer/     # interface.py (Summarizer protocol, SummaryResult) + langchain_summarizer.py (two-call chat approach)
       sequencing/     # interface.py (Sequencer protocol) + plain_sequencer.py (generator-based ordered pass)
-      chat/          # per-chunk grounded Q&A
+      chat/          # interface.py (Chat protocol) + langchain_chat.py (LangChainChat, grounded on content)
       jobs/          # async execution port; local BackgroundTasks adapter
       api/           # FastAPI routes + DI wiring
       config.py      # Pydantic Settings
@@ -107,9 +108,14 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - **Verify:** `backend/tests/test_summarizer.py` (6 tests, fake chat model — asserts profile/chunk end up in the content call, asserts the short_summary call receives the *generated content* rather than `raw_text`, asserts both calls forbid conversational filler) + `backend/tests/test_sequencing.py` (3 tests, fake summarizer — asserts order, short-summary threading, `initial_short_summary` handling, empty-list case). All offline, no real network. 25/25 passing across M1-M5.
 - `backend/scripts/verify_summarizer.py`: manual, real-LLM script (small 3-chapter synthetic PDF → real `PyMuPdfIngestor`/`StructuralChunker` → chunks persisted in a temp SQLite `Repository` → real `PlainSequencer`/`LangChainSummarizer` → prints each chunk's content/short_summary for manual coherence review). Run for real with `gpt-4.1-mini`: coherence across chapters worked as intended (later chapters built on earlier ones without re-explaining), confirmed the chat-filler issue above, then confirmed fixed after the prompt revisions (rerun recommended to re-confirm after the raw_text→content redesign, not yet done).
 
-### M6 — Chat module
-- Per-chunk grounded Q&A, built on the same LLM layer, independent of summarizer.
-- **Verify:** script/test asking a question grounded in one chunk's stored content and checking the answer references it.
+### M6 — Chat module ✅
+- `chat/interface.py`: single `Chat` protocol — `respond(chunk, profile, history, question) -> str`. No result dataclass needed (unlike `SummaryResult`) since there's only one output, the answer text.
+- **Decided this session, kept deliberately minimalistic:** grounded on `chunk.content` only (the tailored writeup the reader actually read), not `raw_text` — simplest, and keeps answers consistent with what's on screen. Reader profile (background/intent) *is* passed in, so answers are tailored the same way `content`/`short_summary` are.
+- `chat/langchain_chat.py`'s `LangChainChat(chat_model_factory)`: one call — builds a `SystemMessage` from profile + chunk heading/content + an instruction to answer only from that grounding (and say so plainly if the question isn't answerable from it), converts `history` (`ChatMessage`s, oldest first) into alternating `HumanMessage`/`AIMessage`, appends the new question, one `model.invoke(...)`. Unlike the Summarizer, no filler-suppression instruction — this output is a live chat turn, so a natural conversational tone is correct.
+- Kept **pure, no Storage dependency**, same pattern as `Summarizer`/`Sequencer`: takes `history` as a plain argument, returns just the answer string. Persisting the new question/answer as `ChatMessage` rows is the caller's job (the API layer, M8) — the module itself never touches `Repository`.
+- No history truncation/windowing — full history sent every time. Noted as a known limitation (parallel to the LLM retry/backoff note in `design.md` §9), not solved here.
+- **Verify:** `backend/tests/test_chat.py` (4 tests, fake chat model — asserts grounding is `content`-only and `raw_text` never appears, asserts empty history sends just `[system, question]`, asserts non-empty history converts to alternating `Human`/`AI` messages ending with the new question). All offline. 29/29 passing across M1-M6.
+- `backend/scripts/verify_chat.py`: manual, real-LLM script (same synthetic biology PDF → real ingest/chunk → one chunk summarized for real to get genuine `content` → a short sequence of grounded follow-up questions via the real `LangChainChat`, building `history` across turns, including one deliberately off-topic question to check the model declines rather than guesses). Run yourself once ready.
 
 ### M7 — Job Runner module
 - `jobs/interface.py`: async execution port (e.g. `run_book_processing(book_id)`), plus `jobs/background_task_adapter.py` using FastAPI `BackgroundTasks`.
