@@ -38,6 +38,8 @@ class ChunkSummary(BaseModel):
     id: str
     index: int
     heading: str | None
+    page_start: int
+    page_end: int
     status: Status
 
 
@@ -45,8 +47,14 @@ class ChunkContentResponse(BaseModel):
     id: str
     index: int
     heading: str | None
+    page_start: int
+    page_end: int
     content: str | None  # None if not summarized yet
     status: Status
+
+
+class ChunkUpdateRequest(BaseModel):
+    heading: str
 
 
 class ChatRequest(BaseModel):

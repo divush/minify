@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useBookStatus } from '../hooks/useBook'
+import ChapterReviewPanel from '../components/ChapterReviewPanel'
 import ProcessingPanel from '../components/ProcessingPanel'
 import ChapterSpine from '../components/ChapterSpine'
 import ReadingPane from '../components/ReadingPane'
@@ -32,6 +33,9 @@ export default function BookView() {
         <Link to="/">← Back to library</Link>
       </div>
     )
+  }
+  if (status.status === 'awaiting_confirmation') {
+    return <ChapterReviewPanel bookId={bookId!} />
   }
   if (status.status !== 'ready') {
     return <ProcessingPanel bookId={bookId!} />

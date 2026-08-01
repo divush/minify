@@ -58,6 +58,8 @@ class ChunkRow(Base):
     index: Mapped[int]
     heading: Mapped[str | None] = mapped_column(String, nullable=True)
     raw_text: Mapped[str] = mapped_column(Text)
+    page_start: Mapped[int]
+    page_end: Mapped[int]
     content: Mapped[str | None] = mapped_column(Text, nullable=True)
     short_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String)

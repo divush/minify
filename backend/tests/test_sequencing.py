@@ -16,7 +16,15 @@ class _FakeSummarizer:
 
 
 def _make_chunk(chunk_id: str, index: int) -> Chunk:
-    return Chunk(id=chunk_id, book_id="book-1", index=index, raw_text=f"text {index}", status="processing")
+    return Chunk(
+        id=chunk_id,
+        book_id="book-1",
+        index=index,
+        raw_text=f"text {index}",
+        page_start=1,
+        page_end=1,
+        status="processing",
+    )
 
 
 def _make_profile() -> ReaderProfile:

@@ -19,10 +19,17 @@ travels between the Chunker and whatever assembles final `Chunk` rows later
 (the Job Runner, M7), so it lives here rather than in `minify.models`.
 """
 
+from bisect import bisect_right
 from dataclasses import dataclass
 from typing import Protocol
 
 from minify.ingestion import IngestedDocument
+
+
+def offset_to_page(offset: int, page_offsets: list[int]) -> int:
+    """Maps a character offset into `IngestedDocument.text` to the 1-indexed
+    PDF page it falls on, given that document's `page_offsets`."""
+    return bisect_right(page_offsets, offset)
 
 
 @dataclass(frozen=True)
@@ -32,21 +39,28 @@ class RawChunk:
     `heading` is the chapter title if this chunk came from a detected
     heading; `None` for fallback-split chunks, and also `None` for any
     leading front-matter text that appeared before the first heading.
+    `page_start`/`page_end` are 1-indexed PDF pages, so a reader can find
+    this chunk in a physical/PDF copy of the book.
     """
 
     heading: str | None
     text: str
+    page_start: int
+    page_end: int
 
 
 class FallbackSplitter(Protocol):
     """Splits raw text into chunks when no chapter structure was detected.
 
-    Knows nothing about PDFs, headings, or the rest of the document — just
-    plain text in, `RawChunk`s out — so it can be swapped or unit-tested
-    independently of `StructuralChunker`.
+    Knows nothing about PDFs or headings — just plain text in, `RawChunk`s
+    out — so it can be swapped or unit-tested independently of
+    `StructuralChunker`. Still needs `page_offsets` (see `IngestedDocument`)
+    to compute each produced chunk's page range; the fallback path always
+    runs on the *whole* document text, never a sub-slice, so `page_offsets`'
+    coordinate space lines up directly with `text` here.
     """
 
-    def split(self, text: str) -> list[RawChunk]: ...
+    def split(self, text: str, page_offsets: list[int]) -> list[RawChunk]: ...
 
 
 class Chunker(Protocol):

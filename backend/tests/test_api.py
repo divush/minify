@@ -75,7 +75,7 @@ def client(tmp_path, fake_model):
     app.dependency_overrides.clear()
 
 
-def test_full_flow_upload_status_chunks_content_chat(client, fake_model):
+def test_full_flow_upload_confirm_status_chunks_content_chat(client, fake_model):
     pdf_bytes = _build_synthetic_pdf()
 
     upload_response = client.post(
@@ -85,21 +85,42 @@ def test_full_flow_upload_status_chunks_content_chat(client, fake_model):
     book_id = upload_response.json()["book_id"]
 
     # TestClient runs BackgroundTasks synchronously as part of the request
-    # cycle, so processing has already finished by the time we get here.
+    # cycle, so ingestion+chunking has already finished — the book stops at
+    # awaiting_confirmation, not ready, until someone confirms the chapters.
     status_response = client.get(f"/books/{book_id}/status")
     assert status_response.status_code == 200
     status_body = status_response.json()
-    assert status_body["status"] == "ready"
+    assert status_body["status"] == "awaiting_confirmation"
     assert status_body["total_chunks"] > 0
-    assert status_body["ready_chunks"] == status_body["total_chunks"]
+    assert status_body["ready_chunks"] == 0
 
     chunks_response = client.get(f"/books/{book_id}/chunks")
     assert chunks_response.status_code == 200
     chunks = chunks_response.json()
     assert [c["index"] for c in chunks] == list(range(len(chunks)))
-    assert all(c["status"] == "ready" for c in chunks)
+    assert all(c["status"] == "queued" for c in chunks)
+    assert all(c["page_start"] >= 1 and c["page_end"] >= c["page_start"] for c in chunks)
 
     first_chunk_id = chunks[0]["id"]
+
+    rename_response = client.patch(f"/chunks/{first_chunk_id}", json={"heading": "Renamed Chapter"})
+    assert rename_response.status_code == 200
+    assert rename_response.json()["heading"] == "Renamed Chapter"
+
+    confirm_response = client.post(f"/books/{book_id}/confirm")
+    assert confirm_response.status_code == 200
+    # The route itself returns "processing" synchronously, same as upload —
+    # the background task (which TestClient does run before this call
+    # returns control) is what actually finishes the summarization.
+    assert confirm_response.json()["status"] == "processing"
+
+    status_after_confirm = client.get(f"/books/{book_id}/status").json()
+    assert status_after_confirm["status"] == "ready"
+
+    chunks = client.get(f"/books/{book_id}/chunks").json()
+    assert all(c["status"] == "ready" for c in chunks)
+    assert chunks[0]["heading"] == "Renamed Chapter"
+
     content_response = client.get(f"/chunks/{first_chunk_id}/content")
     assert content_response.status_code == 200
     content_body = content_response.json()
@@ -142,8 +163,9 @@ def test_list_books_returns_newest_first_with_chunk_counts(client):
     assert response.status_code == 200
     books = response.json()
     assert [b["id"] for b in books] == [second.json()["book_id"], first.json()["book_id"]]
+    assert all(b["status"] == "awaiting_confirmation" for b in books)
     assert all(b["total_chunks"] > 0 for b in books)
-    assert all(b["ready_chunks"] == b["total_chunks"] for b in books)
+    assert all(b["ready_chunks"] == 0 for b in books)
 
 
 def test_get_profile_returns_default(client):
@@ -184,8 +206,51 @@ def test_chat_409_when_chunk_not_summarized_yet(client):
         id=str(uuid.uuid4()), source_filename="t.pdf", reader_profile_id=profile.id, status="processing"
     )
     repository.save_book(book)
-    chunk = Chunk(id=str(uuid.uuid4()), book_id=book.id, index=0, raw_text="text", status="queued")
+    chunk = Chunk(
+        id=str(uuid.uuid4()),
+        book_id=book.id,
+        index=0,
+        raw_text="text",
+        page_start=1,
+        page_end=1,
+        status="queued",
+    )
     repository.save_chunks([chunk])
 
     response = client.post(f"/chunks/{chunk.id}/chat", json={"question": "Anything?"})
+    assert response.status_code == 409
+
+
+def test_confirm_book_404_when_missing(client):
+    response = client.post("/books/does-not-exist/confirm")
+    assert response.status_code == 404
+
+
+def test_confirm_book_409_when_not_awaiting_confirmation(client):
+    pdf_bytes = _build_synthetic_pdf()
+    upload_response = client.post("/books", files={"file": ("b.pdf", pdf_bytes, "application/pdf")})
+    book_id = upload_response.json()["book_id"]
+
+    first_confirm = client.post(f"/books/{book_id}/confirm")
+    assert first_confirm.status_code == 200
+    assert client.get(f"/books/{book_id}/status").json()["status"] == "ready"
+
+    second_confirm = client.post(f"/books/{book_id}/confirm")
+    assert second_confirm.status_code == 409
+
+
+def test_update_chunk_404_when_missing(client):
+    response = client.patch("/chunks/does-not-exist", json={"heading": "New title"})
+    assert response.status_code == 404
+
+
+def test_update_chunk_409_after_confirmation(client):
+    pdf_bytes = _build_synthetic_pdf()
+    upload_response = client.post("/books", files={"file": ("b.pdf", pdf_bytes, "application/pdf")})
+    book_id = upload_response.json()["book_id"]
+    chunk_id = client.get(f"/books/{book_id}/chunks").json()[0]["id"]
+
+    client.post(f"/books/{book_id}/confirm")
+
+    response = client.patch(f"/chunks/{chunk_id}", json={"heading": "Too late"})
     assert response.status_code == 409

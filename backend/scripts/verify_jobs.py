@@ -2,12 +2,14 @@
 pytest, since it makes real (small, cheap) LLM calls.
 
 Builds the same tiny synthetic biology PDF as `verify_summarizer.py`, saves
-a real `ReaderProfile` + `Book` via a temp SQLite `Repository`, then runs
-`PipelineJobRunner.process_book` on a background thread while the main
-thread polls the repository every second and prints status changes as
-they're observed — demonstrating that processing happens without blocking
-the caller, and that each chunk's status moves queued -> processing -> ready
-in order.
+a real `ReaderProfile` + `Book` via a temp SQLite `Repository`, then runs the
+two-phase pipeline for real: `PipelineJobRunner.process_book` on a background
+thread (ingest + chunk only) while the main thread polls and prints status
+changes, stopping at `awaiting_confirmation` — printing the extracted
+chapters + page ranges, the actual human-review point in real use — then
+runs `PipelineJobRunner.summarize_book` the same way to demonstrate the
+second phase, confirming each chunk's status moves queued -> processing ->
+ready in order.
 
 Usage: set LLM_API_KEY in backend/.env, then run:
 
@@ -114,31 +116,47 @@ def main() -> None:
         job_runner = PipelineJobRunner(PyMuPdfIngestor(), StructuralChunker(), sequencer, repository)
 
         pdf_bytes = _build_synthetic_pdf()
-        thread = threading.Thread(target=job_runner.process_book, args=(book.id, pdf_bytes))
-        thread.start()
-
-        print("Job started on a background thread. Polling status every 1s...\n")
         last_seen: dict[str, str] = {}
-        while thread.is_alive() or last_seen.get(book.id) not in ("ready", "failed"):
-            current_book = repository.get_book(book.id)
-            if last_seen.get(book.id) != current_book.status:
-                last_seen[book.id] = current_book.status
-                print(f"[book]  status -> {current_book.status}")
 
-            for chunk in repository.get_chunks(book.id):
-                if last_seen.get(chunk.id) != chunk.status:
-                    last_seen[chunk.id] = chunk.status
-                    print(f"[chunk {chunk.index}] status -> {chunk.status}")
+        def _poll_until(*target_statuses: str) -> None:
+            while True:
+                current_book = repository.get_book(book.id)
+                if last_seen.get(book.id) != current_book.status:
+                    last_seen[book.id] = current_book.status
+                    print(f"[book]  status -> {current_book.status}")
 
-            if current_book.status in ("ready", "failed"):
-                break
-            time.sleep(1)
+                for chunk in repository.get_chunks(book.id):
+                    if last_seen.get(chunk.id) != chunk.status:
+                        last_seen[chunk.id] = chunk.status
+                        print(f"[chunk {chunk.index}] status -> {chunk.status}")
 
-        thread.join()
+                if current_book.status in target_statuses:
+                    return
+                time.sleep(1)
+
+        print("Phase 1: process_book (ingest + chunk) on a background thread...\n")
+        phase1 = threading.Thread(target=job_runner.process_book, args=(book.id, pdf_bytes))
+        phase1.start()
+        _poll_until("awaiting_confirmation", "failed")
+        phase1.join()
+
+        print("\n--- Human review point: extracted chapters + page ranges ---")
+        for chunk in repository.get_chunks(book.id):
+            print(f"  Chapter {chunk.index} — {chunk.heading} (pages {chunk.page_start}-{chunk.page_end})")
+
+        if repository.get_book(book.id).status == "failed":
+            print("\nBook processing failed during ingestion/chunking.")
+            return
+
+        print("\nPhase 2: summarize_book on a background thread...\n")
+        phase2 = threading.Thread(target=job_runner.summarize_book, args=(book.id,))
+        phase2.start()
+        _poll_until("ready", "failed")
+        phase2.join()
 
         print("\nDone. Final chunk contents:\n")
         for chunk in repository.get_chunks(book.id):
-            print(f"=== Chunk {chunk.index} — {chunk.heading} ===")
+            print(f"=== Chunk {chunk.index} — {chunk.heading} (pages {chunk.page_start}-{chunk.page_end}) ===")
             print(f"--- content ---\n{chunk.content}\n")
             print(f"--- short_summary ---\n{chunk.short_summary}\n")
 

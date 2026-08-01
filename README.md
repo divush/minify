@@ -30,6 +30,9 @@ Before uploading a real book, open `backend/.env` and set `LLM_API_KEY` to a
 real OpenAI key. Without one, the app still runs — you just can't process a
 book past the upload step.
 
+If the servers were started detached (or you closed the terminal without
+Ctrl+C), `./stop.sh` stops both.
+
 ## Manual setup
 
 If you'd rather run things yourself instead of `start.sh`:

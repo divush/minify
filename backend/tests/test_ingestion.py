@@ -70,6 +70,8 @@ def test_ingest_detects_headings():
     assert [h.title for h in result.headings] == ["Chapter 1", "Chapter 2", "Chapter 3"]
     for heading in result.headings:
         assert result.text[heading.offset : heading.offset + len(heading.title)] == heading.title
+    # One page per chapter in this fixture, so headings should land on pages 1/2/3.
+    assert [h.page for h in result.headings] == [1, 2, 3]
 
 
 def test_ingest_detects_headings_with_equal_heading_and_body_line_counts():
@@ -87,6 +89,26 @@ def test_ingest_detects_headings_with_equal_heading_and_body_line_counts():
     result = PyMuPdfIngestor().ingest(pdf_bytes)
 
     assert [h.title for h in result.headings] == ["Chapter 1", "Chapter 2", "Chapter 3"]
+
+
+def test_ingest_records_one_page_offset_per_page_including_blank_pages():
+    doc = fitz.open()
+    page1 = doc.new_page()
+    page1.insert_text((72, 72), "Chapter 1", fontsize=24)
+    page1.insert_text((72, 110), "Body text on page one.", fontsize=11)
+    doc.new_page()  # blank page, no extracted lines at all
+    page3 = doc.new_page()
+    page3.insert_text((72, 72), "Chapter 2", fontsize=24)
+    page3.insert_text((72, 110), "Body text on page three.", fontsize=11)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    result = PyMuPdfIngestor().ingest(pdf_bytes)
+
+    assert len(result.page_offsets) == 3
+    # The blank page shouldn't shift the offset -> page mapping for what follows.
+    assert [h.title for h in result.headings] == ["Chapter 1", "Chapter 2"]
+    assert [h.page for h in result.headings] == [1, 3]
 
 
 def test_ingest_falls_back_when_no_structure():

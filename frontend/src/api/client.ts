@@ -6,6 +6,7 @@ import type {
   ChatResponse,
   ChunkContentResponse,
   ChunkSummary,
+  ChunkUpdateRequest,
   ProfileResponse,
   ProfileUpdateRequest,
 } from './types'
@@ -51,6 +52,19 @@ export async function listBookChunks(bookId: string): Promise<ChunkSummary[]> {
 
 export async function getChunkContent(chunkId: string): Promise<ChunkContentResponse> {
   return request(`/chunks/${chunkId}/content`)
+}
+
+export async function confirmBook(bookId: string): Promise<BookStatusResponse> {
+  return request(`/books/${bookId}/confirm`, { method: 'POST' })
+}
+
+export async function updateChunkHeading(chunkId: string, heading: string): Promise<ChunkSummary> {
+  const body: ChunkUpdateRequest = { heading }
+  return request(`/chunks/${chunkId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }
 
 export async function getChunkChatHistory(chunkId: string): Promise<ChatMessageResponse[]> {

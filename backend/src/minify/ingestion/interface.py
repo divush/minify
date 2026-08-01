@@ -28,6 +28,7 @@ class Heading:
 
     title: str
     offset: int  # character index into IngestedDocument.text where this heading starts
+    page: int  # 1-indexed PDF page this heading starts on
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,11 @@ class IngestedDocument:
 
     text: str
     headings: list[Heading]
+    # page_offsets[i] is the character offset in `text` where page i+1 begins
+    # (1-indexed pages, 0-indexed list). One entry per page, even blank ones,
+    # so index arithmetic never drifts from real PDF page numbers. Lets the
+    # Chunker map any offset back to a page via `offset_to_page`.
+    page_offsets: list[int]
     title: str | None = None  # best-effort, from PDF metadata
 
 
@@ -53,6 +59,7 @@ class LineSpan:
     text: str
     font_size: float
     offset: int  # character index into the final concatenated text where this line starts
+    page: int  # 1-indexed PDF page this line appears on
 
 
 class HeadingDetector(Protocol):

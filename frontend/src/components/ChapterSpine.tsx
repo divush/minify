@@ -44,7 +44,12 @@ export default function ChapterSpine({ bookId, selectedChunkId, onSelect, isOpen
                 onClick={() => onSelect(chunk.id)}
               >
                 <span className={styles.pip} />
-                <span>{chunk.heading ?? `Section ${chunk.index + 1}`}</span>
+                <span className={styles.tocText}>
+                  <span>{chunk.heading ?? `Section ${chunk.index + 1}`}</span>
+                  <span className={styles.tocPages}>
+                    pp. {chunk.page_start}–{chunk.page_end}
+                  </span>
+                </span>
               </button>
             </li>
           ))}

@@ -6,7 +6,7 @@ the mechanical slicing at heading offsets. Delegates entirely to an injected
 exists.
 """
 
-from minify.chunker.interface import FallbackSplitter, RawChunk
+from minify.chunker.interface import FallbackSplitter, RawChunk, offset_to_page
 from minify.chunker.langchain_splitter import LangChainFallbackSplitter
 from minify.ingestion import IngestedDocument
 
@@ -25,13 +25,20 @@ class StructuralChunker:
 
     def chunk(self, document: IngestedDocument) -> list[RawChunk]:
         if not document.headings:
-            return self._fallback_splitter.split(document.text)
+            return self._fallback_splitter.split(document.text, document.page_offsets)
 
         chunks: list[RawChunk] = []
 
         leading_text = document.text[: document.headings[0].offset].strip()
         if leading_text:
-            chunks.append(RawChunk(heading=None, text=leading_text))
+            chunks.append(
+                RawChunk(
+                    heading=None,
+                    text=leading_text,
+                    page_start=offset_to_page(0, document.page_offsets),
+                    page_end=offset_to_page(document.headings[0].offset - 1, document.page_offsets),
+                )
+            )
 
         for i, heading in enumerate(document.headings):
             start = heading.offset
@@ -40,6 +47,13 @@ class StructuralChunker:
 
             chunk_text = document.text[start:end].strip()
             if chunk_text:
-                chunks.append(RawChunk(heading=heading.title, text=chunk_text))
+                chunks.append(
+                    RawChunk(
+                        heading=heading.title,
+                        text=chunk_text,
+                        page_start=heading.page,
+                        page_end=offset_to_page(end - 1, document.page_offsets),
+                    )
+                )
 
         return chunks

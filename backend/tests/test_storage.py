@@ -44,6 +44,8 @@ def test_storage_round_trip(repo):
             index=i,
             heading=f"Chapter {i + 1}",
             raw_text=f"Raw text for chapter {i + 1}.",
+            page_start=i * 10 + 1,
+            page_end=i * 10 + 9,
             status="queued",
         )
         for i in range(3)
@@ -53,6 +55,7 @@ def test_storage_round_trip(repo):
     stored_chunks = repo.get_chunks(book.id)
     assert [c.index for c in stored_chunks] == [0, 1, 2]
     assert stored_chunks[0].content is None
+    assert [(c.page_start, c.page_end) for c in stored_chunks] == [(1, 9), (11, 19), (21, 29)]
 
     first_chunk_id = stored_chunks[0].id
     repo.update_chunk_status(first_chunk_id, "processing")
@@ -61,11 +64,13 @@ def test_storage_round_trip(repo):
         content="Tailored writeup of chapter 1.",
         short_summary="Chapter 1 covered X.",
     )
+    repo.update_chunk_heading(first_chunk_id, "Renamed Chapter 1")
 
     updated_chunk = repo.get_chunk(first_chunk_id)
     assert updated_chunk.status == "processing"
     assert updated_chunk.content == "Tailored writeup of chapter 1."
     assert updated_chunk.short_summary == "Chapter 1 covered X."
+    assert updated_chunk.heading == "Renamed Chapter 1"
 
     messages = [
         ChatMessage(

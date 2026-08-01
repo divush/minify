@@ -41,7 +41,7 @@ class FontSizeHeadingDetector:
         threshold = body_size * self._size_ratio
 
         return [
-            Heading(title=line.text, offset=line.offset)
+            Heading(title=line.text, offset=line.offset, page=line.page)
             for line in lines
             if line.font_size >= threshold
             and 0 < len(line.text.split()) <= self._max_heading_words

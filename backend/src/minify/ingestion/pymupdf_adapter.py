@@ -26,9 +26,12 @@ class PyMuPdfIngestor:
 
             lines: list[LineSpan] = []
             text_parts: list[str] = []
+            page_offsets: list[int] = []
             offset = 0
 
             for page in doc:
+                page_number = page.number + 1  # PyMuPDF pages are 0-indexed
+                page_offsets.append(offset)
                 for block in page.get_text("dict")["blocks"]:
                     for line in block.get("lines", []):
                         spans = line.get("spans", [])
@@ -39,12 +42,14 @@ class PyMuPdfIngestor:
                             continue
                         font_size = max(span["size"] for span in spans)
 
-                        lines.append(LineSpan(text=line_text, font_size=font_size, offset=offset))
+                        lines.append(
+                            LineSpan(text=line_text, font_size=font_size, offset=offset, page=page_number)
+                        )
                         text_parts.append(line_text)
                         offset += len(line_text) + 1  # +1 accounts for the "\n" joined below
 
             text = "\n".join(text_parts)
             headings = self._heading_detector.detect(lines)
-            return IngestedDocument(text=text, headings=headings, title=title)
+            return IngestedDocument(text=text, headings=headings, page_offsets=page_offsets, title=title)
         finally:
             doc.close()

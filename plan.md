@@ -51,23 +51,24 @@ Minify/
       sequencing/     # interface.py (Sequencer protocol) + plain_sequencer.py (generator-based ordered pass)
       chat/          # interface.py (Chat protocol) + langchain_chat.py (LangChainChat, grounded on content)
       jobs/          # interface.py (JobRunner protocol) + pipeline_runner.py (PipelineJobRunner, synchronous orchestration)
-      api/           # main.py (app + /health) + dependencies.py (DI providers) + routes.py (9 endpoints) + schemas.py
+      api/           # main.py (app + /health) + dependencies.py (DI providers) + routes.py (11 endpoints) + schemas.py
       config.py      # Pydantic Settings
     tests/
     .env.example
   frontend/          # React + Vite, separate app (react-router-dom, @tanstack/react-query, react-markdown)
     src/
       views/         # LibraryView, BookView (routes: "/", "/books/:bookId")
-      components/    # BookCard, UploadRow, ProfileModal, ProcessingPanel,
+      components/    # BookCard, UploadRow, ProfileModal, ChapterReviewPanel, ProcessingPanel,
                       #   ChapterSpine, ReadingPane, MarginaliaPanel
-      hooks/         # useBooks, useBook, useChunkContent, useChat, useProfile
-                      #   (TanStack Query wrappers; refetchInterval drives all polling)
+      hooks/         # useBooks, useBook (status/chunks/confirm/rename), useChunkContent,
+                      #   useChat, useProfile (TanStack Query wrappers; refetchInterval drives all polling)
       api/           # types.ts (mirrors backend schemas) + client.ts (typed fetch per route)
       index.css      # design tokens ported from the frozen prototype
   design.md
   plan.md            # this file
   README.md          # local run instructions
   start.sh           # one-command setup + run both servers; Ctrl+C stops both
+  stop.sh            # standalone stop, for when Ctrl+C isn't available
 ```
 
 Each backend module folder = one "port": an `interface.py` (or `protocol.py`) defining the contract, plus one concrete adapter. Nothing outside `api/` imports a concrete adapter directly.
@@ -185,6 +186,19 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
   - **Second issue found and fixed:** killing only the captured `$!` PID for each server isn't enough — `uvicorn --reload` and `vite` each fork their own worker/child process independent of how they're invoked. `cleanup()` now also `pkill -f`s both by a distinctive pattern as a safety net, confirmed (via `SIGTERM`) to leave no orphaned process or held port behind.
   - **Testing caveat, not a bug:** I could only trigger the trap in my own testing by backgrounding `./start.sh &` myself (no real terminal available here) and signaling it externally — under that specific setup, bash forces `SIGINT` (though not `SIGTERM`) to be ignored for asynchronous commands started by a non-interactive/non-job-control shell, a POSIX rule that doesn't apply to a real terminal running `./start.sh` in the foreground and pressing Ctrl+C (interactive shells have job control). I verified the cleanup logic itself is correct via `SIGTERM`, which isn't subject to that rule, but the actual Ctrl+C path in a real terminal is something you should confirm yourself.
 - **Verify:** ran `start.sh` for real — `uv sync` (58 packages, already synced), `alembic upgrade head` (already at head), both servers came up and responded (`/health` 200, frontend 200, all source/CSS modules transform without error), and shutdown/cleanup was confirmed to leave zero stray processes or held ports.
+- `stop.sh`, added after a follow-up ask: stops both servers standalone (`pkill` by the same patterns `start.sh`'s own cleanup uses, `SIGTERM` first then `SIGKILL` after a 1s grace period if still alive) — useful when the servers were started detached or the terminal running `start.sh` was closed without Ctrl+C. Confirmed working end-to-end: started both servers, ran `stop.sh`, verified zero processes/held ports and both endpoints refusing connections afterward.
+
+## Post-M10 feature: chapter verification + page ranges ✅
+
+Added after all ten milestones were done, per a direct user request: a human-in-the-loop pause between chapter extraction and the (expensive, LLM-driven) summarization step, so a reader can review/rename detected chapters before the app spends time/money on them — plus page ranges per chapter, so a reader can cross-reference a chapter against a physical/PDF copy of the book. Scope decided via a clarifying question: **rename titles + confirm**, not full merge/split/exclude editing (noted as a possible future extension).
+
+- **Page tracking (Ingestion → Chunker):** `ingestion/interface.py`'s `LineSpan`/`Heading` gained `page: int` (1-indexed); `IngestedDocument` gained `page_offsets: list[int]` (one entry per PDF page, even blank ones, recorded by `PyMuPdfIngestor` at the start of each page's walk — so index arithmetic never drifts). `chunker/interface.py` gained a shared `offset_to_page()` helper (`bisect_right` against `page_offsets`) and `RawChunk` gained `page_start`/`page_end`; `FallbackSplitter.split()` widened to also take `page_offsets` since it operates on the whole document text.
+  - **Real bug found and fixed:** `LangChainFallbackSplitter` initially used LangChain's own `add_start_index=True`/`create_documents()` offset tracking — but with overlap > 0 (the app's actual default, 200 words), LangChain's naive incremental `text.find(chunk, previous_index + 1)` search reliably returns `-1` (not found) for overlapping chunks, since the next chunk's start falls *before* the previous chunk's end. Fixed by computing offsets manually instead: `text.find(piece, cursor)` where `cursor` is reset to the *previous chunk's start* (not its end) each time — safe because chunks are still produced in forward order regardless of overlap, and confirmed correct for every chunk including the ones LangChain's own tracking failed on.
+- **Domain + storage:** `Chunk` gained non-optional `page_start`/`page_end`. `Status` gained `"awaiting_confirmation"` (Book-only state; Chunks never use it, `Status` stays one shared literal per M1). New Alembic migration adds the two `chunks` columns with `server_default='1'` so any existing local rows backfill harmlessly instead of failing the NOT NULL constraint. New `Repository.update_chunk_heading()` for the rename feature.
+- **Job Runner split into two phases** (the actual behavior change): `process_book` now stops after ingest+chunk, setting the book `"awaiting_confirmation"` instead of continuing into summarization; a new `summarize_book(book_id)` picks up from there (fetches the already-saved chunks, runs the same sequencing loop `process_book` used to run inline). Both keep independent `try/except → mark book "failed" → re-raise` wrappers.
+- **API:** `POST /books/{id}/confirm` (404/409-guarded, flips status to `"processing"` synchronously then backgrounds `summarize_book`, same pattern as upload) and `PATCH /chunks/{id}` (404/409-guarded — only editable while `"awaiting_confirmation"` — calls `update_chunk_heading`). `ChunkSummary`/`ChunkContentResponse` both gained `page_start`/`page_end`.
+- **Frontend:** new `ChapterReviewPanel` (+ hooks `useConfirmBook`/`useRenameChunk`) — lists extracted chapters as editable title inputs (save on blur/Enter, not per-keystroke) with page ranges, plus a confirm button. `BookView` routes `"awaiting_confirmation"` status to it before falling through to the existing `ProcessingPanel`/reading layout. `ChapterSpine`, `ProcessingPanel`, and `ReadingPane` all now show page ranges too — the actual "follow along with the book" surface requested.
+- **Verify:** all touched backend tests updated and passing — `test_ingestion.py` (page/`page_offsets`, including a blank-page case), `test_chunker.py` (page ranges for both structural and fallback paths), `test_storage.py` (round-trip + `update_chunk_heading`), `test_jobs.py` (rewritten for the two-phase split, 5 tests), `test_api.py` (full flow now includes rename+confirm, plus new 404/409 tests for both routes). 51/51 backend tests passing. `npx tsc -b` clean. Manually smoke-tested via `curl` against real running servers (both started via `start.sh`): upload → `awaiting_confirmation` with correct per-chunk page ranges → rename → 404 on a bogus confirm — all behaved exactly as designed. Did not spend real LLM money re-verifying the summarization half live (already covered by the fake-LLM `test_api.py` full-flow test); an in-browser click-through is still yours to do.
 
 ## Sequencing notes
 - Backend is built fully before frontend (M0 excepted, which touches both to prove the loop), matching design's own build order.

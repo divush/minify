@@ -16,8 +16,12 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 # Processing lifecycle shared by Book (whole book) and Chunk (one section):
-# queued -> processing -> ready, or failed at any point along the way.
-Status = Literal["queued", "processing", "ready", "failed"]
+# queued -> processing -> [awaiting_confirmation ->] processing -> ready,
+# or failed at any point along the way. "awaiting_confirmation" is a Book-only
+# state (a Book sits there once chapters are extracted, waiting on the reader
+# to review/confirm them before summarization starts) — Chunks never use it,
+# but Status stays one shared literal across both for simplicity, per M1.
+Status = Literal["queued", "processing", "awaiting_confirmation", "ready", "failed"]
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -81,6 +85,8 @@ class Chunk(BaseModel):
     index: int  # order of this chunk within the book (0, 1, 2, ...)
     heading: str | None = None  # detected chapter/section title, if ingestion found one
     raw_text: str  # the chunk's source text; input to the summarizer and to chat grounding
+    page_start: int  # 1-indexed PDF page this chunk begins on
+    page_end: int  # 1-indexed PDF page this chunk ends on
     content: str | None = None  # reader-facing writeup, tailored to the profile; never carried forward
     short_summary: str | None = None  # leaner, profile-aware continuity artifact carried into the next chunk's summarization call
     status: Status  # per-chunk processing state; drives per-chunk progress reporting

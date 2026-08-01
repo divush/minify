@@ -34,9 +34,6 @@ class PipelineJobRunner:
             raise
 
     def _process_book(self, book_id: str, pdf_bytes: bytes) -> None:
-        book = self._repository.get_book(book_id)
-        profile = self._repository.get_reader_profile(book.reader_profile_id)
-
         document = self._ingestor.ingest(pdf_bytes)
         raw_chunks = self._chunker.chunk(document)
         chunks = [
@@ -46,11 +43,26 @@ class PipelineJobRunner:
                 index=index,
                 heading=raw_chunk.heading,
                 raw_text=raw_chunk.text,
+                page_start=raw_chunk.page_start,
+                page_end=raw_chunk.page_end,
                 status="queued",
             )
             for index, raw_chunk in enumerate(raw_chunks)
         ]
         self._repository.save_chunks(chunks)
+        self._repository.update_book_status(book_id, "awaiting_confirmation")
+
+    def summarize_book(self, book_id: str) -> None:
+        try:
+            self._summarize_book(book_id)
+        except Exception:
+            self._repository.update_book_status(book_id, "failed")
+            raise
+
+    def _summarize_book(self, book_id: str) -> None:
+        book = self._repository.get_book(book_id)
+        profile = self._repository.get_reader_profile(book.reader_profile_id)
+        chunks = self._repository.get_chunks(book_id)
 
         # Manual `next()` stepping (not `for chunk, result in sequencer.run(...)`)
         # so each chunk can be marked "processing" before the Sequencer actually

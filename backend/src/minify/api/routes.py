@@ -1,7 +1,10 @@
-"""The HTTP routes matching design.md's architecture diagram (§6), plus a
-small addendum (`GET /books`, `GET /profile`, `PATCH /profile`) added after
-the M9 frontend design review surfaced that the Library view and the
-profile-edit modal had no API to actually call.
+"""The HTTP routes matching design.md's architecture diagram (§6), plus two
+rounds of post-M8 additions: `GET /books`/`GET /profile`/`PATCH /profile`
+(the M9 frontend design review surfaced the Library view and profile-edit
+modal had no API to call), and `POST /books/{id}/confirm` + `PATCH
+/chunks/{id}` (a chapter-verification pause between chunking and the
+LLM-driven summarization step — see `jobs/interface.py` for the two-phase
+`JobRunner` split this relies on).
 
 This is the only place concrete adapters (constructed via `api/dependencies.py`)
 meet an actual HTTP request — every route body is thin orchestration over
@@ -27,6 +30,7 @@ from minify.api.schemas import (
     ChatResponse,
     ChunkContentResponse,
     ChunkSummary,
+    ChunkUpdateRequest,
     ProfileResponse,
     ProfileUpdateRequest,
 )
@@ -108,9 +112,36 @@ def list_book_chunks(
         raise HTTPException(status_code=404, detail="Book not found")
 
     return [
-        ChunkSummary(id=chunk.id, index=chunk.index, heading=chunk.heading, status=chunk.status)
+        ChunkSummary(
+            id=chunk.id,
+            index=chunk.index,
+            heading=chunk.heading,
+            page_start=chunk.page_start,
+            page_end=chunk.page_end,
+            status=chunk.status,
+        )
         for chunk in repository.get_chunks(book_id)
     ]
+
+
+@router.post("/books/{book_id}/confirm", response_model=BookStatusResponse)
+def confirm_book(
+    book_id: str,
+    background_tasks: BackgroundTasks,
+    repository: Repository = Depends(get_repository),
+    job_runner: JobRunner = Depends(get_job_runner),
+) -> BookStatusResponse:
+    book = repository.get_book(book_id)
+    if book is None:
+        raise HTTPException(status_code=404, detail="Book not found")
+    if book.status != "awaiting_confirmation":
+        raise HTTPException(status_code=409, detail="Book is not awaiting confirmation")
+
+    repository.update_book_status(book_id, "processing")
+    background_tasks.add_task(job_runner.summarize_book, book_id)
+
+    chunks = repository.get_chunks(book_id)
+    return BookStatusResponse(book_id=book_id, status="processing", total_chunks=len(chunks), ready_chunks=0)
 
 
 @router.get("/chunks/{chunk_id}/content", response_model=ChunkContentResponse)
@@ -122,7 +153,39 @@ def get_chunk_content(
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     return ChunkContentResponse(
-        id=chunk.id, index=chunk.index, heading=chunk.heading, content=chunk.content, status=chunk.status
+        id=chunk.id,
+        index=chunk.index,
+        heading=chunk.heading,
+        page_start=chunk.page_start,
+        page_end=chunk.page_end,
+        content=chunk.content,
+        status=chunk.status,
+    )
+
+
+@router.patch("/chunks/{chunk_id}", response_model=ChunkSummary)
+def update_chunk(
+    chunk_id: str, update: ChunkUpdateRequest, repository: Repository = Depends(get_repository)
+) -> ChunkSummary:
+    chunk = repository.get_chunk(chunk_id)
+    if chunk is None:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    book = repository.get_book(chunk.book_id)
+    if book.status != "awaiting_confirmation":
+        raise HTTPException(
+            status_code=409, detail="Chapters can only be edited while awaiting confirmation"
+        )
+
+    repository.update_chunk_heading(chunk_id, update.heading)
+
+    return ChunkSummary(
+        id=chunk.id,
+        index=chunk.index,
+        heading=update.heading,
+        page_start=chunk.page_start,
+        page_end=chunk.page_end,
+        status=chunk.status,
     )
 
 

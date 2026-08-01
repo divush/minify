@@ -2,7 +2,7 @@
 // not shared code with the backend (design.md's frontend/backend separation) —
 // just the same shapes, defined twice.
 
-export type Status = 'queued' | 'processing' | 'ready' | 'failed'
+export type Status = 'queued' | 'processing' | 'awaiting_confirmation' | 'ready' | 'failed'
 
 export interface BookUploadResponse {
   book_id: string
@@ -29,6 +29,8 @@ export interface ChunkSummary {
   id: string
   index: number
   heading: string | null
+  page_start: number
+  page_end: number
   status: Status
 }
 
@@ -36,8 +38,14 @@ export interface ChunkContentResponse {
   id: string
   index: number
   heading: string | null
+  page_start: number
+  page_end: number
   content: string | null
   status: Status
+}
+
+export interface ChunkUpdateRequest {
+  heading: string
 }
 
 export interface ChatMessageResponse {

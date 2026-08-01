@@ -1,0 +1,106 @@
+.wrap {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  min-height: 100vh;
+}
+
+.card {
+  width: min(560px, 100%);
+}
+
+.backLink {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  text-decoration: none;
+}
+.backLink:hover {
+  color: var(--ink);
+}
+
+.card h1 {
+  font-family: var(--serif-display);
+  font-size: 26px;
+  font-weight: 400;
+  margin: 18px 0 6px;
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--ink-faint);
+  line-height: 1.5;
+  margin: 0 0 20px;
+}
+
+.list {
+  list-style: none;
+  margin: 0 0 22px;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.titleInput {
+  flex: 1 1 auto;
+  font-family: var(--sans);
+  font-size: 14.5px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+}
+.titleInput:hover {
+  border-color: var(--line);
+  background: var(--paper);
+}
+.titleInput:focus-visible {
+  border-color: var(--accent);
+  background: var(--paper);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.pages {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.status {
+  color: var(--ink-faint);
+  font-size: 13.5px;
+}
+
+.confirmBtn {
+  font-family: var(--sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  border: none;
+  border-radius: 7px;
+  padding: 11px 20px;
+  cursor: pointer;
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition: opacity 0.18s ease;
+  width: 100%;
+}
+.confirmBtn:hover {
+  opacity: 0.88;
+}
+.confirmBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

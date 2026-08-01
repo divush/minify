@@ -28,7 +28,15 @@ export default function ReadingPane({ chunkId, onAsk, onToggleSpine }: Props) {
       </button>
       <div className={styles.head}>
         <div>
-          <div className={styles.eyebrow}>Chapter {(chunk?.index ?? 0) + 1}</div>
+          <div className={styles.eyebrow}>
+            Chapter {(chunk?.index ?? 0) + 1}
+            {chunk && (
+              <>
+                {' '}
+                · pp. {chunk.page_start}–{chunk.page_end}
+              </>
+            )}
+          </div>
           <h1>{heading}</h1>
         </div>
         <button className={styles.askBtn} onClick={onAsk} type="button" disabled={!chunk?.content}>

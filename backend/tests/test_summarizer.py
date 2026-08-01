@@ -34,6 +34,8 @@ def _make_chunk(**overrides) -> Chunk:
         index=0,
         heading="Chapter 1",
         raw_text="Cells are the basic unit of life.",
+        page_start=1,
+        page_end=1,
         status="processing",
     )
     defaults.update(overrides)

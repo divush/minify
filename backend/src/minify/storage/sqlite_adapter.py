@@ -48,6 +48,8 @@ def _chunk_to_domain(row: ChunkRow) -> Chunk:
         index=row.index,
         heading=row.heading,
         raw_text=row.raw_text,
+        page_start=row.page_start,
+        page_end=row.page_end,
         content=row.content,
         short_summary=row.short_summary,
         status=row.status,
@@ -139,6 +141,14 @@ class SqliteRepository:
             if row is None:
                 raise ValueError(f"Chunk {chunk_id} not found")
             row.status = status
+            session.commit()
+
+    def update_chunk_heading(self, chunk_id: str, heading: str) -> None:
+        with Session(self._engine) as session:
+            row = session.get(ChunkRow, chunk_id)
+            if row is None:
+                raise ValueError(f"Chunk {chunk_id} not found")
+            row.heading = heading
             session.commit()
 
     def save_chunk_output(self, chunk_id: str, content: str, short_summary: str) -> None:
