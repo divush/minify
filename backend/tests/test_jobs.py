@@ -1,10 +1,20 @@
 import pytest
 
+from minify.chunk_refiner.passthrough_chunk_refiner import PassthroughChunkRefiner
 from minify.chunker import RawChunk
 from minify.ingestion import IngestedDocument
 from minify.jobs.pipeline_runner import PipelineJobRunner
 from minify.models import Book, Chunk, ReaderProfile
 from minify.summarizer import SummaryResult
+
+
+class _DropFirstChunkRefiner:
+    """Fake `ChunkRefiner` that always drops the first chunk — used to prove
+    `PipelineJobRunner` actually applies the refiner's output, not just the
+    raw chunker output."""
+
+    def refine(self, chunks: list[RawChunk]) -> list[RawChunk]:
+        return chunks[1:]
 
 
 class _FakeIngestor:
@@ -118,7 +128,9 @@ def test_process_book_saves_chunks_and_stops_at_awaiting_confirmation():
         RawChunk(heading="Ch1", text="t1", page_start=1, page_end=3),
         RawChunk(heading="Ch2", text="t2", page_start=4, page_end=6),
     ]
-    runner = PipelineJobRunner(_FakeIngestor(), _FakeChunker(raw_chunks), _FakeSequencer([]), repository)
+    runner = PipelineJobRunner(
+        _FakeIngestor(), _FakeChunker(raw_chunks), PassthroughChunkRefiner(), _FakeSequencer([]), repository
+    )
 
     runner.process_book(book.id, b"pdf-bytes")
 
@@ -131,10 +143,28 @@ def test_process_book_saves_chunks_and_stops_at_awaiting_confirmation():
     assert not any(call[0] == "get_chunks" for call in repository.calls)
 
 
+def test_process_book_applies_the_chunk_refiners_output_not_the_raw_chunks():
+    book, profile = _make_book(), _make_profile()
+    repository = _FakeRepository(book, profile)
+    raw_chunks = [
+        RawChunk(heading="Index: A", text="a", page_start=1, page_end=1),
+        RawChunk(heading="Ch1", text="t1", page_start=2, page_end=5),
+    ]
+    runner = PipelineJobRunner(
+        _FakeIngestor(), _FakeChunker(raw_chunks), _DropFirstChunkRefiner(), _FakeSequencer([]), repository
+    )
+
+    runner.process_book(book.id, b"pdf-bytes")
+
+    assert [c.heading for c in repository.saved_chunks] == ["Ch1"]
+
+
 def test_process_book_failure_marks_book_failed_and_reraises():
     book, profile = _make_book(), _make_profile()
     repository = _FakeRepository(book, profile)
-    runner = PipelineJobRunner(_FailingIngestor(), _FakeChunker([]), _FakeSequencer([]), repository)
+    runner = PipelineJobRunner(
+        _FailingIngestor(), _FakeChunker([]), PassthroughChunkRefiner(), _FakeSequencer([]), repository
+    )
 
     with pytest.raises(RuntimeError, match="ingestion boom"):
         runner.process_book(book.id, b"pdf-bytes")
@@ -151,7 +181,9 @@ def test_summarize_book_runs_the_sequencing_loop_and_marks_book_ready():
     chunks = [_make_chunk("c0", 0), _make_chunk("c1", 1)]
     repository = _FakeRepository(book, profile, existing_chunks=chunks)
     results = [SummaryResult(content="c1", short_summary="s1"), SummaryResult(content="c2", short_summary="s2")]
-    runner = PipelineJobRunner(_FakeIngestor(), _FakeChunker([]), _FakeSequencer(results), repository)
+    runner = PipelineJobRunner(
+        _FakeIngestor(), _FakeChunker([]), PassthroughChunkRefiner(), _FakeSequencer(results), repository
+    )
 
     runner.summarize_book(book.id)
 
@@ -165,7 +197,9 @@ def test_summarize_book_chunk_status_transitions_are_queued_then_processing_then
     chunks = [_make_chunk("c0", 0), _make_chunk("c1", 1)]
     repository = _FakeRepository(book, profile, existing_chunks=chunks)
     results = [SummaryResult(content="c1", short_summary="s1"), SummaryResult(content="c2", short_summary="s2")]
-    runner = PipelineJobRunner(_FakeIngestor(), _FakeChunker([]), _FakeSequencer(results), repository)
+    runner = PipelineJobRunner(
+        _FakeIngestor(), _FakeChunker([]), PassthroughChunkRefiner(), _FakeSequencer(results), repository
+    )
 
     runner.summarize_book(book.id)
 
@@ -189,7 +223,11 @@ def test_summarize_book_failure_marks_book_failed_and_reraises():
     repository = _FakeRepository(book, profile, existing_chunks=chunks)
     results = [SummaryResult(content="c1", short_summary="s1")]
     runner = PipelineJobRunner(
-        _FakeIngestor(), _FakeChunker([]), _FakeSequencer(results, fail_at_index=1), repository
+        _FakeIngestor(),
+        _FakeChunker([]),
+        PassthroughChunkRefiner(),
+        _FakeSequencer(results, fail_at_index=1),
+        repository,
     )
 
     with pytest.raises(RuntimeError, match="summarization boom"):

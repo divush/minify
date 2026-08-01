@@ -16,7 +16,12 @@ from langchain_core.language_models import BaseChatModel
 
 class ChatModelFactory(Protocol):
     """Produces a configured chat model. Every other module that needs to
-    talk to an LLM (summarizer, chat) calls this instead of constructing a
-    provider client directly."""
+    talk to an LLM (summarizer, chat, chunk refiner) calls this instead of
+    constructing a provider client directly.
 
-    def get_chat_model(self) -> BaseChatModel: ...
+    `model` optionally overrides `Settings.llm_model` for this one call —
+    e.g. the chunk refiner deliberately uses a cheaper model than the
+    Summarizer, without needing a second factory wired up alongside this one.
+    """
+
+    def get_chat_model(self, model: str | None = None) -> BaseChatModel: ...

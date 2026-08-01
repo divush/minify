@@ -7,6 +7,7 @@ background-execution mechanism deliberately lives outside this module.
 
 import uuid
 
+from minify.chunk_refiner import ChunkRefiner
 from minify.chunker import Chunker
 from minify.ingestion import Ingestor
 from minify.models import Chunk
@@ -16,13 +17,19 @@ from minify.storage import Repository
 
 class PipelineJobRunner:
     """`JobRunner` implementation wiring together Ingestion, Chunker,
-    Sequencer, and Storage for one book."""
+    ChunkRefiner, Sequencer, and Storage for one book."""
 
     def __init__(
-        self, ingestor: Ingestor, chunker: Chunker, sequencer: Sequencer, repository: Repository
+        self,
+        ingestor: Ingestor,
+        chunker: Chunker,
+        chunk_refiner: ChunkRefiner,
+        sequencer: Sequencer,
+        repository: Repository,
     ) -> None:
         self._ingestor = ingestor
         self._chunker = chunker
+        self._chunk_refiner = chunk_refiner
         self._sequencer = sequencer
         self._repository = repository
 
@@ -36,6 +43,7 @@ class PipelineJobRunner:
     def _process_book(self, book_id: str, pdf_bytes: bytes) -> None:
         document = self._ingestor.ingest(pdf_bytes)
         raw_chunks = self._chunker.chunk(document)
+        raw_chunks = self._chunk_refiner.refine(raw_chunks)
         chunks = [
             Chunk(
                 id=str(uuid.uuid4()),

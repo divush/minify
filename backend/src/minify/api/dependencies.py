@@ -19,6 +19,9 @@ from sqlalchemy.engine import Engine
 
 from minify.chat import Chat
 from minify.chat.langchain_chat import LangChainChat
+from minify.chunk_refiner import ChunkRefiner
+from minify.chunk_refiner.llm_chunk_refiner import LLMChunkRefiner
+from minify.chunk_refiner.passthrough_chunk_refiner import PassthroughChunkRefiner
 from minify.chunker import Chunker
 from minify.chunker.structural_chunker import StructuralChunker
 from minify.config import get_settings
@@ -69,6 +72,13 @@ def get_chunker() -> Chunker:
 
 
 @lru_cache
+def get_chunk_refiner(factory: ChatModelFactory = Depends(get_chat_model_factory)) -> ChunkRefiner:
+    if not get_settings().enable_chunk_refinement:
+        return PassthroughChunkRefiner()
+    return LLMChunkRefiner(factory)
+
+
+@lru_cache
 def get_summarizer(factory: ChatModelFactory = Depends(get_chat_model_factory)) -> Summarizer:
     return LangChainSummarizer(factory)
 
@@ -87,7 +97,8 @@ def get_chat(factory: ChatModelFactory = Depends(get_chat_model_factory)) -> Cha
 def get_job_runner(
     ingestor: Ingestor = Depends(get_ingestor),
     chunker: Chunker = Depends(get_chunker),
+    chunk_refiner: ChunkRefiner = Depends(get_chunk_refiner),
     sequencer: Sequencer = Depends(get_sequencer),
     repository: Repository = Depends(get_repository),
 ) -> JobRunner:
-    return PipelineJobRunner(ingestor, chunker, sequencer, repository)
+    return PipelineJobRunner(ingestor, chunker, chunk_refiner, sequencer, repository)

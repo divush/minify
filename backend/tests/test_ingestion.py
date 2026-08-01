@@ -111,6 +111,63 @@ def test_ingest_records_one_page_offset_per_page_including_blank_pages():
     assert [h.page for h in result.headings] == [1, 3]
 
 
+def test_ingest_prefers_embedded_outline_over_font_size_heuristic():
+    # Uniform font size throughout -- the font-size heuristic alone would
+    # find zero headings here (nothing clears the body-text threshold), so
+    # this only passes because the embedded outline is actually being used.
+    doc = fitz.open()
+    for text in ["Chapter One", "Body text for chapter one.", "Chapter Two", "Body text for chapter two."]:
+        page = doc.new_page()
+        page.insert_text((72, 72), text, fontsize=11)
+    doc.set_toc([[1, "Chapter One", 1], [1, "Chapter Two", 3]])
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    result = PyMuPdfIngestor().ingest(pdf_bytes)
+
+    assert [h.title for h in result.headings] == ["Chapter One", "Chapter Two"]
+    assert [h.page for h in result.headings] == [1, 3]
+
+
+def test_detector_merges_multiline_heading_into_one():
+    # A real chapter title wrapped across two PDF text lines at the same
+    # size, with nothing but the title between them, should become one
+    # heading, not two.
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Chapter One:", fontsize=24)
+    page.insert_text((72, 100), "A Very Long Title", fontsize=24)
+    page.insert_text((72, 130), "Body text for the chapter starts here and continues on.", fontsize=11)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    result = PyMuPdfIngestor().ingest(pdf_bytes)
+
+    assert len(result.headings) == 1
+    assert result.headings[0].title == "Chapter One: A Very Long Title"
+
+
+def test_detector_excludes_section_level_headings_via_size_tiering():
+    # A chapter title (largest font) and a section heading within it
+    # (smaller, but still bigger than body) — only the chapter title should
+    # survive; the section heading is real structure, just not
+    # chapter-level, and shouldn't become its own top-level chunk.
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), "Chapter One", fontsize=28)
+    page.insert_text((72, 100), "Some opening body text for the chapter.", fontsize=11)
+    page.insert_text((72, 130), "A Section Heading", fontsize=16)
+    page.insert_text(
+        (72, 160), "Body text explaining the section in more detail here and more and more.", fontsize=11
+    )
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    result = PyMuPdfIngestor().ingest(pdf_bytes)
+
+    assert [h.title for h in result.headings] == ["Chapter One"]
+
+
 def test_ingest_falls_back_when_no_structure():
     pdf_bytes = _build_plain_pdf(
         [

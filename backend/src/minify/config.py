@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     llm_model: str = "gpt-4.1-mini"
     llm_api_key: str = ""
+    # Cheap model for the chunk-refinement classification pass — deliberately
+    # separate from llm_model, which stays whatever's configured for actual
+    # summarization quality.
+    refinement_llm_model: str = "gpt-4o-mini"
+    enable_chunk_refinement: bool = True
 
     cors_origins: list[str] = ["http://localhost:5173"]
 

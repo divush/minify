@@ -25,6 +25,7 @@ from pathlib import Path
 import fitz
 from sqlalchemy import create_engine
 
+from minify.chunk_refiner.passthrough_chunk_refiner import PassthroughChunkRefiner
 from minify.chunker.structural_chunker import StructuralChunker
 from minify.config import get_settings
 from minify.ingestion.pymupdf_adapter import PyMuPdfIngestor
@@ -113,7 +114,11 @@ def main() -> None:
         chat_model_factory = LangChainChatModelFactory(settings)
         summarizer = LangChainSummarizer(chat_model_factory)
         sequencer = PlainSequencer(summarizer)
-        job_runner = PipelineJobRunner(PyMuPdfIngestor(), StructuralChunker(), sequencer, repository)
+        # PassthroughChunkRefiner here on purpose — this script verifies job-runner
+        # mechanics, not refinement; see verify_chunk_refiner.py for that.
+        job_runner = PipelineJobRunner(
+            PyMuPdfIngestor(), StructuralChunker(), PassthroughChunkRefiner(), sequencer, repository
+        )
 
         pdf_bytes = _build_synthetic_pdf()
         last_seen: dict[str, str] = {}

@@ -62,17 +62,37 @@ class LineSpan:
     page: int  # 1-indexed PDF page this line appears on
 
 
+@dataclass(frozen=True)
+class OutlineEntry:
+    """One entry from a PDF's embedded outline/bookmarks, if it has any.
+
+    This is authoritative structural data created by whoever produced the
+    PDF — when present and usable, it's a far more reliable heading source
+    than inferring structure from rendered font sizes. `level` is 1-indexed
+    (1 = outermost) and `page` is a 1-indexed PDF page, same convention as
+    `LineSpan`/`Heading`. Outlines give a page number, not a character
+    offset, since bookmarks are a page-level PDF feature.
+    """
+
+    level: int
+    title: str
+    page: int
+
+
 class HeadingDetector(Protocol):
     """Decides which lines in a document are headings.
 
-    Takes the full ordered list of lines already extracted from the document
-    and returns the subset that qualify as headings, as `Heading`s. Knows
-    nothing about PDFs or PyMuPDF — only about text, font sizes, and offsets
-    — so it can be swapped or unit-tested independently of how the lines were
-    obtained.
+    Takes the full ordered list of lines already extracted from the
+    document, the document's embedded outline/bookmarks (empty if it has
+    none), and its `page_offsets` (see `IngestedDocument`) — and returns
+    whichever subset qualifies as headings, as `Heading`s. Knows nothing
+    about PDFs or PyMuPDF beyond these plain shapes, so it can be swapped or
+    unit-tested independently of how the lines/outline were obtained.
     """
 
-    def detect(self, lines: list[LineSpan]) -> list[Heading]: ...
+    def detect(
+        self, lines: list[LineSpan], outline: list[OutlineEntry], page_offsets: list[int]
+    ) -> list[Heading]: ...
 
 
 class Ingestor(Protocol):

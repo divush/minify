@@ -22,6 +22,20 @@ def test_factory_caches_the_model_instance():
     assert factory.get_chat_model() is factory.get_chat_model()
 
 
+def test_factory_builds_a_distinct_cached_model_per_override():
+    settings = Settings(llm_provider="openai", llm_model="gpt-4.1-mini", llm_api_key="test-key")
+    factory = LangChainChatModelFactory(settings)
+
+    default_model = factory.get_chat_model()
+    cheap_model = factory.get_chat_model(model="gpt-4o-mini")
+
+    assert default_model.model_name == "gpt-4.1-mini"
+    assert cheap_model.model_name == "gpt-4o-mini"
+    assert cheap_model is not default_model
+    # Requesting the same override again returns the cached instance.
+    assert factory.get_chat_model(model="gpt-4o-mini") is cheap_model
+
+
 def test_factory_rejects_unsupported_provider():
     settings = Settings(llm_provider="not-a-real-provider", llm_api_key="test-key")
     factory = LangChainChatModelFactory(settings)
