@@ -92,6 +92,29 @@ def test_storage_round_trip(repo):
     assert repo.get_book(book.id).status == "ready"
 
 
+def test_list_books_returns_newest_first(repo):
+    profile = ReaderProfile(
+        id=str(uuid.uuid4()), background="x", intent="y", is_default=True
+    )
+    repo.save_reader_profile(profile)
+
+    first = Book(
+        id=str(uuid.uuid4()), source_filename="first.pdf", reader_profile_id=profile.id, status="ready"
+    )
+    repo.save_book(first)
+    second = Book(
+        id=str(uuid.uuid4()), source_filename="second.pdf", reader_profile_id=profile.id, status="processing"
+    )
+    repo.save_book(second)
+
+    books = repo.list_books()
+    assert [b.id for b in books] == [second.id, first.id]
+
+
+def test_list_books_empty_when_none_saved(repo):
+    assert repo.list_books() == []
+
+
 def test_get_missing_returns_none(repo):
     assert repo.get_book("does-not-exist") is None
     assert repo.get_chunk("does-not-exist") is None

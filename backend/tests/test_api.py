@@ -118,6 +118,43 @@ def test_full_flow_upload_status_chunks_content_chat(client, fake_model):
     assert "FAKE_RESPONSE" in followup_text
 
 
+def test_list_books_returns_newest_first_with_chunk_counts(client):
+    pdf_bytes = _build_synthetic_pdf()
+
+    first = client.post("/books", files={"file": ("first.pdf", pdf_bytes, "application/pdf")})
+    second = client.post("/books", files={"file": ("second.pdf", pdf_bytes, "application/pdf")})
+
+    response = client.get("/books")
+    assert response.status_code == 200
+    books = response.json()
+    assert [b["id"] for b in books] == [second.json()["book_id"], first.json()["book_id"]]
+    assert all(b["total_chunks"] > 0 for b in books)
+    assert all(b["ready_chunks"] == b["total_chunks"] for b in books)
+
+
+def test_get_profile_returns_default(client):
+    response = client.get("/profile")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["label"] == "General reader"
+
+
+def test_patch_profile_updates_and_persists(client):
+    patch_response = client.patch(
+        "/profile", json={"label": "Expert", "background": "PhD in biology", "intent": "Exam prep"}
+    )
+    assert patch_response.status_code == 200
+    assert patch_response.json()["background"] == "PhD in biology"
+
+    get_response = client.get("/profile")
+    assert get_response.json() == {
+        "id": patch_response.json()["id"],
+        "label": "Expert",
+        "background": "PhD in biology",
+        "intent": "Exam prep",
+    }
+
+
 def test_book_status_404_when_missing(client):
     response = client.get("/books/does-not-exist/status")
     assert response.status_code == 404

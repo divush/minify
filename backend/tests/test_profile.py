@@ -35,3 +35,25 @@ def test_create_persists_a_custom_profile(service):
     fetched = service.get(profile.id)
     assert fetched == profile
     assert fetched.background == "PhD in biology"
+
+
+def test_update_changes_fields_in_place(service):
+    profile = service.get_default()
+
+    updated = service.update(
+        profile.id, background="New background", intent="New intent", label="New label"
+    )
+
+    assert updated.id == profile.id
+    assert updated.is_default == profile.is_default
+    assert updated.background == "New background"
+    assert updated.intent == "New intent"
+    assert updated.label == "New label"
+
+    fetched = service.get(profile.id)
+    assert fetched == updated
+
+
+def test_update_raises_for_missing_profile(service):
+    with pytest.raises(ValueError, match="not found"):
+        service.update("does-not-exist", background="x", intent="y")

@@ -23,6 +23,15 @@ class BookStatusResponse(BaseModel):
     ready_chunks: int
 
 
+class BookSummary(BaseModel):
+    id: str
+    title: str | None
+    source_filename: str
+    status: Status
+    total_chunks: int
+    ready_chunks: int
+
+
 class ChunkSummary(BaseModel):
     id: str
     index: int
@@ -44,3 +53,16 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+
+
+class ProfileResponse(BaseModel):
+    id: str
+    label: str | None
+    background: str
+    intent: str
+
+
+class ProfileUpdateRequest(BaseModel):
+    label: str | None = None
+    background: str
+    intent: str

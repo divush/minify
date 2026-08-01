@@ -22,3 +22,10 @@ class ProfileService(Protocol):
     def create(self, background: str, intent: str, label: str | None = None) -> ReaderProfile: ...
 
     def get(self, profile_id: str) -> ReaderProfile | None: ...
+
+    def update(
+        self, profile_id: str, background: str, intent: str, label: str | None = None
+    ) -> ReaderProfile:
+        """Updates an existing profile's fields in place. Raises `ValueError`
+        if `profile_id` doesn't exist."""
+        ...

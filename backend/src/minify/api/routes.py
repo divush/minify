@@ -1,4 +1,7 @@
-"""The five HTTP routes matching design.md's architecture diagram (§6).
+"""The HTTP routes matching design.md's architecture diagram (§6), plus a
+small addendum (`GET /books`, `GET /profile`, `PATCH /profile`) added after
+the M9 frontend design review surfaced that the Library view and the
+profile-edit modal had no API to actually call.
 
 This is the only place concrete adapters (constructed via `api/dependencies.py`)
 meet an actual HTTP request — every route body is thin orchestration over
@@ -17,11 +20,14 @@ from minify.api.dependencies import (
 )
 from minify.api.schemas import (
     BookStatusResponse,
+    BookSummary,
     BookUploadResponse,
     ChatRequest,
     ChatResponse,
     ChunkContentResponse,
     ChunkSummary,
+    ProfileResponse,
+    ProfileUpdateRequest,
 )
 from minify.chat import Chat
 from minify.jobs import JobRunner
@@ -55,6 +61,25 @@ async def upload_book(
     background_tasks.add_task(job_runner.process_book, book.id, pdf_bytes)
 
     return BookUploadResponse(book_id=book.id, status=book.status)
+
+
+@router.get("/books", response_model=list[BookSummary])
+def list_books(repository: Repository = Depends(get_repository)) -> list[BookSummary]:
+    summaries = []
+    for book in repository.list_books():
+        chunks = repository.get_chunks(book.id)
+        ready_chunks = sum(1 for chunk in chunks if chunk.status == "ready")
+        summaries.append(
+            BookSummary(
+                id=book.id,
+                title=book.title,
+                source_filename=book.source_filename,
+                status=book.status,
+                total_chunks=len(chunks),
+                ready_chunks=ready_chunks,
+            )
+        )
+    return summaries
 
 
 @router.get("/books/{book_id}/status", response_model=BookStatusResponse)
@@ -127,3 +152,26 @@ def chat_with_chunk(
     )
 
     return ChatResponse(answer=answer)
+
+
+@router.get("/profile", response_model=ProfileResponse)
+def get_profile(profile_service: ProfileService = Depends(get_profile_service)) -> ProfileResponse:
+    profile = profile_service.get_default()
+    return ProfileResponse(
+        id=profile.id, label=profile.label, background=profile.background, intent=profile.intent
+    )
+
+
+@router.patch("/profile", response_model=ProfileResponse)
+def update_profile(
+    update: ProfileUpdateRequest, profile_service: ProfileService = Depends(get_profile_service)
+) -> ProfileResponse:
+    # This route only ever edits the single default profile — there's no
+    # profile-picker yet, so "the profile" always means the default one.
+    default = profile_service.get_default()
+    updated = profile_service.update(
+        default.id, background=update.background, intent=update.intent, label=update.label
+    )
+    return ProfileResponse(
+        id=updated.id, label=updated.label, background=updated.background, intent=updated.intent
+    )

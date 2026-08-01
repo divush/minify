@@ -57,3 +57,16 @@ class DefaultProfileService:
 
     def get(self, profile_id: str) -> ReaderProfile | None:
         return self._repository.get_reader_profile(profile_id)
+
+    def update(
+        self, profile_id: str, background: str, intent: str, label: str | None = None
+    ) -> ReaderProfile:
+        existing = self._repository.get_reader_profile(profile_id)
+        if existing is None:
+            raise ValueError(f"Reader profile {profile_id} not found")
+
+        updated = existing.model_copy(update={"background": background, "intent": intent, "label": label})
+        # save_reader_profile merges on id, so this updates the existing row rather than
+        # inserting a duplicate.
+        self._repository.save_reader_profile(updated)
+        return updated

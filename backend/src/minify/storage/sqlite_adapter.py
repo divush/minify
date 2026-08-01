@@ -102,6 +102,12 @@ class SqliteRepository:
             row = session.get(BookRow, book_id)
             return _book_to_domain(row) if row else None
 
+    def list_books(self) -> list[Book]:
+        with Session(self._engine) as session:
+            stmt = select(BookRow).order_by(BookRow.created_at.desc())
+            rows = session.scalars(stmt).all()
+            return [_book_to_domain(row) for row in rows]
+
     def update_book_status(self, book_id: str, status: Status) -> None:
         with Session(self._engine) as session:
             row = session.get(BookRow, book_id)

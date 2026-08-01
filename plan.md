@@ -19,7 +19,8 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 - **M6 — done.**
 - **M7 — done.**
 - **M8 — done.**
-- M9–M10 — not started.
+- **M9 — design direction frozen** (see below); frontend not yet built.
+- M10 — not started.
 
 ## Note on scope
 
@@ -136,10 +137,30 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - **Verify:** `backend/tests/test_api.py` (3 tests) — overrides just `get_engine` (temp SQLite file) and `get_chat_model_factory` (fake chat model returning a canned string) via `app.dependency_overrides`; everything else (`PyMuPdfIngestor`, `StructuralChunker`, `PlainSequencer`, `PipelineJobRunner`, `SqliteRepository`) runs for real. One test drives the full flow — upload a synthetic PDF → poll status (`TestClient` runs `BackgroundTasks` synchronously as part of the request, so the book is already `"ready"` by the time the response comes back) → list chunks → get content → chat, then a follow-up chat call confirming prior Q/A shows up as history in the next LLM call. Plus two negative-path tests (404 on a missing book, 409 chatting with an unsummarized chunk). All offline. 35/35 passing across M1-M8.
 - This is the first milestone where the whole app is actually exercisable end-to-end outside of pytest/scripts — run `uvicorn`, `curl -F file=@some.pdf http://localhost:8000/books`, poll `/books/{id}/status`, chat with a chunk once ready, using a real `.env` key.
 
+**Addendum (post-M8, driven by the M9 design review) — `GET /books`, `GET /profile`, `PATCH /profile`:**
+- `storage/interface.py`/`sqlite_adapter.py`: new `Repository.list_books() -> list[Book]`, newest-first (`order_by(BookRow.created_at.desc())`) — there was previously no way to fetch every book, only one by id.
+- `profile/interface.py`/`service.py`: new `ProfileService.update(profile_id, background, intent, label=None) -> ReaderProfile` — fetches the existing profile, raises `ValueError` if missing, and persists the updated fields via the existing `Repository.save_reader_profile` (its `session.merge(...)` already upserts, so no new Storage method was needed here, just the new service method).
+- `api/routes.py`: `GET /books` (list, with per-book chunk counts, same computation `GET /books/{id}/status` already does); `GET /profile` (fetches the default profile — needed so a client can pre-fill an edit form before `PATCH`ing, not just push blind writes); `PATCH /profile` (always targets the default profile — there's still no profile-picker — calls `ProfileService.update`).
+- `api/schemas.py`: `BookSummary`, `ProfileResponse`, `ProfileUpdateRequest`.
+- **Verify:** extended `test_storage.py`, `test_profile.py`, `test_api.py` (7 new tests: list-books ordering + empty case, profile update + missing-id error, the three new routes end-to-end). 42/42 passing across M1-M8.
+
 ### M9 — Frontend
-- Upload View, Chapter List, Reading View, Chat Panel (design §6), talking only to the REST API, no shared code with backend.
-- Upload View shows a progress indicator (spinner or per-chunk progress bar) driven by polling `GET /books/{id}/status` until processing completes.
-- **Verify:** manual run through the full flow in a browser — upload a PDF, watch progress update, see chapters, read a chunk's tailored content, chat with a chunk.
+
+**Design direction — frozen this session, as a static/click-through HTML prototype (no build tools, no real API calls), reviewed and approved before any real React code gets written.** Not an Artifact tied to this repo — it lives at the published link below; treat the decisions here as the spec for the real Vite/React build.
+
+- Concept: a "reading room," not a SaaS dashboard — a book's spine, margins, and marginalia rather than cards/sidebars borrowed from generic app templates.
+- Palette: warm bone-paper background, a deep blackened-teal "ink" for text, a muted bookcloth-green accent, an antique gold reserved only for the chat/marginalia layer and in-progress states. Both light and dark themes defined via CSS custom properties.
+- Type: a literary serif (Iowan Old Style/Georgia stack) for book titles and the actual reading content; a plain system-sans stack for UI chrome (nav, buttons, status text) — content reads like a book, interface stays quiet.
+- Layout: a left "spine" is the permanent table of contents once a book is open; the reading column is capped at ~66 characters; chat is labeled **Marginalia** and slides in from the right only on request, not a permanent panel.
+- Views, confirmed via two rounds of review:
+  - **Library (home)** — not just an upload screen: lists previously-ingested books as cards (title, chapter count/status, a slim inline progress bar for still-processing ones), with upload demoted to a secondary row below the list, not the hero.
+  - **Processing** — chapters flip `queued → processing → ready` live as a book is worked through (visualizing the Job Runner's per-chunk status from M7).
+  - **Reading** — spine (chapters + reader-profile chip) + serif reading pane.
+  - **Marginalia (chat)** — grounded per-chapter Q&A, seeded + live-typed demo replies.
+  - **Reader profile** — a modal to edit the *single* profile's label/background/intent (label, edit affordance in the library header, mirrored in the reading view's spine). **Decided this session: one editable profile, no multi-profile picker/switcher** — matches `ProfileService.get_default()`'s current behavior; revisit only if multi-profile support becomes a real need.
+- **Backend gaps this design surfaced — resolved.** The Library and profile-edit views needed API support that didn't exist in M8; see the addendum at the end of the M8 section above (`GET /books`, `GET /profile`, `PATCH /profile`, plus the underlying `Repository.list_books()`/`ProfileService.update()` additions).
+- Upload View shows a progress indicator (per-chapter, not just a spinner) driven by polling `GET /books/{id}/status` until processing completes — confirmed workable in the prototype's live countdown animation.
+- **Verify (for the real build):** manual run through the full flow in a browser — upload a PDF, watch progress update, see the library update, read a chunk's tailored content, chat with a chunk, edit the reader profile.
 
 ### M10 — Local run polish
 - README with setup/run instructions, `.env.example` finalized, any convenience scripts (e.g. a `Justfile`/Makefile for `run backend` / `run frontend`).
