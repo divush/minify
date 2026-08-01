@@ -20,7 +20,7 @@ Book upload/processing is long-running (ingestion + chunking + a sequential LLM 
 - **M7 — done.**
 - **M8 — done.**
 - **M9 — done.** Real Vite/React frontend built against the frozen design; in-browser click-through still to be done by you (see M9 section).
-- M10 — not started.
+- **M10 — done.** README, `.env.example` reviewed, `start.sh`. All ten milestones complete.
 
 ## Note on scope
 
@@ -67,6 +67,7 @@ Minify/
   design.md
   plan.md            # this file
   README.md          # local run instructions
+  start.sh           # one-command setup + run both servers; Ctrl+C stops both
 ```
 
 Each backend module folder = one "port": an `interface.py` (or `protocol.py`) defining the contract, plus one concrete adapter. Nothing outside `api/` imports a concrete adapter directly.
@@ -176,9 +177,14 @@ Each backend module folder = one "port": an `interface.py` (or `protocol.py`) de
 - **Verify:** `uv run pytest` — 43/43 passing (new chat-history route test included). `npx tsc -b` compiles the frontend with no type errors; both dev servers (`uvicorn`, `npm run dev`) start cleanly and every module/CSS file transforms without error. **Not yet done: an actual in-browser click-through** — I don't have a way to drive a real browser from here, so upload a real PDF yourself, watch the library/per-chapter progress update live, read a chapter's rendered Markdown content, chat with a chapter across a refresh, and edit the reader profile, to confirm the UI itself looks and behaves as intended.
 - **Known, deliberately out of scope:** `npm audit` flags a high-severity advisory in `react-router` (an RSC-mode server-action CSRF bypass) — this app is a pure client-side SPA with no RSC/server actions, so that attack vector doesn't apply here, but worth knowing about if `react-router` gets used in a different way later.
 
-### M10 — Local run polish
-- README with setup/run instructions, `.env.example` finalized, any convenience scripts (e.g. a `Justfile`/Makefile for `run backend` / `run frontend`).
-- **Verify:** fresh clone → follow README only → app runs.
+### M10 — Local run polish ✅
+- Root `README.md`: quickstart (`./start.sh`), manual step-by-step setup as an alternative, how to run tests, a note on the standalone real-LLM verify scripts, and a pointer to `plan.md`'s Repo Layout for the full structure. `backend/README.md` and `frontend/README.md` were stale leftovers from `uv init`/`npm create vite` (one empty, one generic Vite template boilerplate) — replaced both with a one-line pointer back to the root README.
+- `.env.example` (both `backend/` and `frontend/`) reviewed against `config.py`'s `Settings` fields and `client.ts`'s `VITE_API_URL` usage — both already matched exactly, no changes needed.
+- `start.sh` (the user asked for this specific script, not a Justfile/Makefile): creates `backend/.env`/`frontend/.env` from `.env.example` if missing, runs `uv sync`, applies migrations (`alembic upgrade head`), installs frontend deps only if `node_modules` is missing, then starts both servers and stops both on Ctrl+C.
+  - **Bug found and fixed while testing:** the first version started the backend in the background but ran the frontend as a *blocking foreground command* — bash only processes a queued `trap` between commands or while blocked in the `wait` builtin, not while stuck waiting on a synchronous foreground child that never exits on its own (a dev server). Fixed by backgrounding both servers and ending the script with `wait`, which is interruptible.
+  - **Second issue found and fixed:** killing only the captured `$!` PID for each server isn't enough — `uvicorn --reload` and `vite` each fork their own worker/child process independent of how they're invoked. `cleanup()` now also `pkill -f`s both by a distinctive pattern as a safety net, confirmed (via `SIGTERM`) to leave no orphaned process or held port behind.
+  - **Testing caveat, not a bug:** I could only trigger the trap in my own testing by backgrounding `./start.sh &` myself (no real terminal available here) and signaling it externally — under that specific setup, bash forces `SIGINT` (though not `SIGTERM`) to be ignored for asynchronous commands started by a non-interactive/non-job-control shell, a POSIX rule that doesn't apply to a real terminal running `./start.sh` in the foreground and pressing Ctrl+C (interactive shells have job control). I verified the cleanup logic itself is correct via `SIGTERM`, which isn't subject to that rule, but the actual Ctrl+C path in a real terminal is something you should confirm yourself.
+- **Verify:** ran `start.sh` for real — `uv sync` (58 packages, already synced), `alembic upgrade head` (already at head), both servers came up and responded (`/health` 200, frontend 200, all source/CSS modules transform without error), and shutdown/cleanup was confirmed to leave zero stray processes or held ports.
 
 ## Sequencing notes
 - Backend is built fully before frontend (M0 excepted, which touches both to prove the loop), matching design's own build order.
