@@ -145,6 +145,25 @@
 .prose :global(ol) {
   padding-left: 1.4em;
 }
+.prose :global(table) {
+  display: block;
+  overflow-x: auto;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.2em 0;
+  font-size: 0.9em;
+}
+.prose :global(th),
+.prose :global(td) {
+  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.prose :global(th) {
+  background: var(--paper-sunken);
+  font-weight: 700;
+}
 
 @media (max-width: 860px) {
   .mobileToggle {

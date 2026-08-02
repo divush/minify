@@ -3,6 +3,7 @@ import { useAskChunk, useChatHistory } from '../hooks/useChat'
 import { useChunkContent } from '../hooks/useChunkContent'
 import styles from './MarginaliaPanel.module.css'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 interface Props {
   chunkId: string
@@ -48,7 +49,7 @@ export default function MarginaliaPanel({ chunkId, onClose }: Props) {
         {history?.map((message, i) => (
           <div key={i} className={`${styles.bubble} ${styles[message.role]}`}>
             <div className={styles.who}>{message.role === 'user' ? 'You' : 'Minify'}</div>
-            <div className={styles.body}><ReactMarkdown>{message.content}</ReactMarkdown></div>
+            <div className={styles.body}><ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown></div>
           </div>
         ))}
         {ask.isPending && ask.variables && (

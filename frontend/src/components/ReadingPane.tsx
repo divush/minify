@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { useBookChunks, useMarkChunkRead } from '../hooks/useBook'
 import { useChunkContent } from '../hooks/useChunkContent'
 import styles from './ReadingPane.module.css'
@@ -65,7 +66,7 @@ export default function ReadingPane({ bookId, chunkId, onSelect, onAsk, onToggle
       {isLoading && <p className={styles.status}>Loading…</p>}
       {chunk?.content ? (
         <div className={styles.prose}>
-          <ReactMarkdown>{chunk.content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{chunk.content}</ReactMarkdown>
         </div>
       ) : (
         !isLoading && <p className={styles.status}>This chapter hasn't been summarized yet.</p>
