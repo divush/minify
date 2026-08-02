@@ -48,7 +48,7 @@ export default function ChapterSpine({ bookId, selectedChunkId, onSelect, isOpen
                 <span className={styles.tocText}>
                   <span>{chunk.heading ?? `Section ${chunk.index + 1}`}</span>
                   <span className={styles.tocPages}>
-                    pp. {chunk.page_start}–{chunk.page_end}
+                    pp. {chunk.page_start}-{chunk.page_end}
                     {chunk.is_read && ' · read'}
                   </span>
                 </span>

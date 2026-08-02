@@ -36,7 +36,7 @@ function ChapterRow({ chunk, onRename }: RowProps) {
         aria-label={`Chapter ${chunk.index + 1} title`}
       />
       <span className={styles.pages}>
-        pp. {chunk.page_start}–{chunk.page_end}
+        pp. {chunk.page_start}-{chunk.page_end}
       </span>
     </li>
   )

@@ -27,7 +27,7 @@ export default function ProcessingPanel({ bookId }: { bookId: string }) {
                 <span className={styles.pip} />
                 <span className={styles.chapTitle}>{chunk.heading ?? `Section ${chunk.index + 1}`}</span>
                 <span className={styles.chapPages}>
-                  pp. {chunk.page_start}–{chunk.page_end}
+                  pp. {chunk.page_start}-{chunk.page_end}
                 </span>
                 <span className={styles.chapState}>
                   {chunk.status === 'ready' ? 'Ready' : chunk.status === 'processing' ? 'Processing…' : 'Queued'}
