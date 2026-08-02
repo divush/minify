@@ -43,7 +43,7 @@ export default function ReadingPane({ bookId, chunkId, onSelect, onAsk, onToggle
             {chunk && (
               <>
                 {' '}
-                · pp. {chunk.page_start}–{chunk.page_end}
+                · pp. {chunk.page_start}-{chunk.page_end}
               </>
             )}
           </div>
